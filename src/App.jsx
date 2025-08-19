@@ -61,8 +61,8 @@ function AppContent() {
         {/* Protected Routes */}
         <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} />}>
           <Route element={<Layout />}>
-            <Route path="/" element={<ShadcnChatBotGroq />} />
-            <Route path="/dataroom" element={<DataRoom />} />
+            <Route path="/chatbot" element={<ShadcnChatBotGroq />} />
+            <Route path="/" element={<DataRoom />} />
           </Route>
         </Route>
 

@@ -1,218 +1,45 @@
-import React from 'react';
-import { ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar, DollarSign, Users, Percent, Eye, EyeOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar, DollarSign, Users, Percent, Eye, EyeOff, Upload } from 'lucide-react';
+import { UploadedFile } from '../dataRoom/filesView';
 
-// Types
-interface Document {
-  document_name: string;
-  link: string;
-  metadata: Record<string, any>;
+interface CategoryStructure {
+  [category: string]: {
+    [subcategory: string]: UploadedFile[];
+  };
 }
 
-interface CategoryData {
-  [subcategory: string]: Document[];
+interface CategoriesViewProps {
+  files: UploadedFile[];
 }
 
-interface CategoriesData {
-  [category: string]: CategoryData;
-}
+const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [expandedSubcategories, setExpandedSubcategories] = useState<Record<string, boolean>>({});
+  const [expandedObjects, setExpandedObjects] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
-// Enhanced sample data with complex nested structures
-const categoriesData = {
-    "Corporate": {
-      "Cap Table": [
-        {
-          "document_name": "Cap_Table_2025-08-01.xlsx",
-          "link": "/data/Cap_Table_2025-08-01.xlsx",
-          "metadata": {
-            "as_of_date": "2025-08-01",
-            "total_fully_diluted_shares": 10000000,
-            "pre_money_valuation": 45000000,
-            "post_money_valuation": 50000000,
-            "shareholders": [
-              {
-                "name": "Alice Ventures LLC",
-                "class": "Series A Preferred",
-                "shares": 1500000,
-                "fd_ownership_pct": 15.0,
-                "price_per_share": 10.00,
-                "invested_amount": 15000000
-              },
-              {
-                "name": "Bob Capital",
-                "class": "Common",
-                "shares": 2000000,
-                "fd_ownership_pct": 20.0
-              }
-            ],
-            "option_pool": {
-              "authorized": 1000000,
-              "unissued": 600000
-            }
-          }
-        }
-      ]
-    },
-    "Financial": {
-      "Monthly Financial Statements": [
-        {
-          "document_name": "Monthly_Financials_2023-2025.xlsx",
-          "link": "/data/Monthly_Financials_2023-2025.xlsx",
-          "metadata": {
-            "period": "Jan 2023 – Dec 2024",
-            "revenue_total": 8200000,
-            "cogs_total": 3000000,
-            "operating_expenses_total": 2500000,
-            "net_income_total": 2700000,
-            "balance_sheet": {
-              "assets": 12000000,
-              "liabilities": 5000000,
-              "equity": 7000000
-            },
-            "cash_flow": {
-              "from_operations": 2200000,
-              "from_investing": -800000,
-              "from_financing": 500000
-            }
-          }
-        }
-      ],
-      "YTD Financial Statements": [
-        {
-          "document_name": "YTD_Financials_2025-06-30.xlsx",
-          "link": "/data/YTD_Financials_2025-06-30.xlsx",
-          "metadata": {
-            "period": "Jan 2025 – Jun 2025",
-            "revenue_ytd": 4000000,
-            "net_income_ytd": 1200000,
-            "variance_vs_budget_pct": 5.0
-          }
-        }
-      ],
-      "Financial Projections": [
-        {
-          "document_name": "Financial_Projections_2025-2030.xlsx",
-          "link": "/data/Financial_Projections_2025-2030.xlsx",
-          "metadata": {
-            "projection_years": [2025, 2026, 2027, 2028, 2029, 2030],
-            "annual_revenue_forecast": {
-              "2025": 8500000,
-              "2026": 12000000,
-              "2027": 17000000,
-              "2028": 24000000,
-              "2029": 32000000,
-              "2030": 42000000
-            },
-            "gross_margin_pct": 65,
-            "ebitda_margin_pct": 25,
-            "headcount_plan": {
-              "2025": 45,
-              "2026": 60,
-              "2027": 80
-            },
-            "funding_required": 15000000,
-            "runway_months": 24
-          }
-        }
-      ]
-    },
-    "Customers": {
-      "Revenue by Customer": [
-        {
-          "document_name": "Revenue_By_Customer_2022-2024.xlsx",
-          "link": "/data/Revenue_By_Customer_2022-2024.xlsx",
-          "metadata": {
-            "top_customers": [
-              {"name": "Acme Corp", "annual_revenue": 1500000, "pct_total_revenue": 18.0, "industry": "Retail", "geo": "US"},
-              {"name": "GlobalTech", "annual_revenue": 1200000, "pct_total_revenue": 14.0, "industry": "Technology", "geo": "EU"}
-            ],
-            "customer_count": 55
-          }
-        }
-      ],
-      "Customer Contracts": [
-        {
-          "document_name": "Customer_Contracts_Summary.xlsx",
-          "link": "/data/Customer_Contracts_Summary.xlsx",
-          "metadata": {
-            "contracts": [
-              {"customer": "Acme Corp", "start_date": "2023-01-01", "end_date": "2026-01-01", "value": 5000000, "status": "Active", "renewal_terms": "Annual Auto-Renew"},
-              {"customer": "GlobalTech", "start_date": "2022-07-01", "end_date": "2025-07-01", "value": 3000000, "status": "Active"}
-            ]
-          }
-        }
-      ]
-    },
-    "Vendors": {
-      "Vendor Contracts": [
-        {
-          "document_name": "Vendor_Contracts_Summary.xlsx",
-          "link": "/data/Vendor_Contracts_Summary.xlsx",
-          "metadata": {
-            "contracts": [
-              {"vendor": "AWS", "service": "Cloud Hosting", "annual_spend": 200000, "status": "Active"},
-              {"vendor": "ZoomInfo", "service": "Data Services", "annual_spend": 50000, "status": "Expired"}
-            ]
-          }
-        }
-      ]
-    },
-    "Receivables": {
-      "AR Aging": [
-        {
-          "document_name": "AR_Aging_2025-08-01.xlsx",
-          "link": "/data/AR_Aging_2025-08-01.xlsx",
-          "metadata": {
-            "total_outstanding": 750000,
-            "aging_buckets": {
-              "0-30": 400000,
-              "31-60": 200000,
-              "61-90": 100000,
-              "90+": 50000
-            }
-          }
-        }
-      ]
-    },
-    "Payables": {
-      "AP Aging": [
-        {
-          "document_name": "AP_Aging_2025-08-01.xlsx",
-          "link": "/data/AP_Aging_2025-08-01.xlsx",
-          "metadata": {
-            "total_liabilities": 560000,
-            "aging_buckets": {
-              "0-30": 300000,
-              "31-60": 150000,
-              "61-90": 70000,
-              "90+": 40000
-            }
-          }
-        }
-      ]
-    },
-    "Equity": {
-      "Stock Option Grants": [
-        {
-          "document_name": "Stock_Option_Grants_Summary.xlsx",
-          "link": "/data/Stock_Option_Grants_Summary.xlsx",
-          "metadata": {
-            "total_grants": 20,
-            "options_outstanding": 400000,
-            "grants": [
-              {"grantee": "Jane Doe", "grant_date": "2023-01-15", "shares": 20000, "strike_price": 5.0, "vest_schedule": "4 years monthly", "status": "Active"},
-              {"grantee": "John Smith", "grant_date": "2024-03-10", "shares": 15000, "strike_price": 6.0, "vest_schedule": "4 years annual", "status": "Active"}
-            ]
-          }
-        }
-      ]
-    }
-  }
+  // Convert uploaded files to category structure
+  const organizeByCategoryStructure = (uploadedFiles: UploadedFile[]): CategoryStructure => {
+    const result: CategoryStructure = {};
 
-const CategoriesView: React.FC = () => {
-  const [expandedCategories, setExpandedCategories] = React.useState<Record<string, boolean>>({});
-  const [expandedSubcategories, setExpandedSubcategories] = React.useState<Record<string, boolean>>({});
-  const [expandedObjects, setExpandedObjects] = React.useState<Record<string, boolean>>({});
-  const [searchQuery, setSearchQuery] = React.useState('');
+    uploadedFiles.forEach(file => {
+      const category = file.category || 'Uncategorized';
+      const subcategory = file.subcategory || 'General';
+
+      if (!result[category]) {
+        result[category] = {};
+      }
+      if (!result[category][subcategory]) {
+        result[category][subcategory] = [];
+      }
+      
+      result[category][subcategory].push(file);
+    });
+
+    return result;
+  };
+
+  const categorizedFiles = organizeByCategoryStructure(files);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories((prev) => ({
@@ -310,7 +137,7 @@ const CategoriesView: React.FC = () => {
     return String(value);
   };
 
-  // Enhanced metadata renderer with better collapsibility and styling
+  // Enhanced metadata renderer
   const renderMetadata = (metadata: any, path: string = '', level: number = 0): React.ReactNode => {
     if (metadata === null || metadata === undefined) {
       const { icon, color } = getValueType(metadata);
@@ -445,12 +272,20 @@ const CategoriesView: React.FC = () => {
     );
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   // Enhanced search filter
-  const filterCategories = (data: CategoriesData, query: string): CategoriesData => {
+  const filterCategories = (data: CategoryStructure, query: string): CategoryStructure => {
     if (!query.trim()) return data;
 
     const searchLower = query.toLowerCase();
-    const result: CategoriesData = {};
+    const result: CategoryStructure = {};
 
     const searchInValue = (value: any): boolean => {
       if (value === null || value === undefined) return false;
@@ -465,17 +300,17 @@ const CategoriesView: React.FC = () => {
     };
 
     Object.entries(data).forEach(([category, subcategories]) => {
-      const filteredSubcategories: CategoryData = {};
+      const filteredSubcategories: { [subcategory: string]: UploadedFile[] } = {};
 
-      Object.entries(subcategories).forEach(([subcategory, documents]) => {
-        const matchingDocuments = documents.filter(
-          (doc) =>
-            doc.document_name.toLowerCase().includes(searchLower) ||
-            searchInValue(doc.metadata)
+      Object.entries(subcategories).forEach(([subcategory, subcategoryFiles]) => {
+        const matchingFiles = subcategoryFiles.filter(
+          (file) =>
+            file.name.toLowerCase().includes(searchLower) ||
+            searchInValue(file.metadata)
         );
 
-        if (matchingDocuments.length > 0) {
-          filteredSubcategories[subcategory] = matchingDocuments;
+        if (matchingFiles.length > 0) {
+          filteredSubcategories[subcategory] = matchingFiles;
         }
       });
 
@@ -489,19 +324,33 @@ const CategoriesView: React.FC = () => {
     return result;
   };
 
+  const filteredCategorizedFiles = filterCategories(categorizedFiles, searchQuery);
+
+  if (files.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Upload className="mx-auto h-12 w-12 text-gray-400" />
+        <h3 className="mt-2 text-sm font-medium text-gray-900">No files uploaded</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Go to the Files tab to upload documents first.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header with Search */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Data Room Categories</h2>
-          <p className="text-gray-600 mt-1">Browse and search through all documents and metadata</p>
+          <h2 className="text-2xl font-bold text-gray-900">Uploaded Files by Categories</h2>
+          <p className="text-gray-600 mt-1">Browse and explore your uploaded documents organized by category</p>
         </div>
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search documents and metadata..."
+            placeholder="Search files and metadata..."
             className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -520,28 +369,26 @@ const CategoriesView: React.FC = () => {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg border shadow-sm">
-          <div className="text-2xl font-bold text-blue-600">{Object.keys(categoriesData).length}</div>
+          <div className="text-2xl font-bold text-blue-600">{Object.keys(categorizedFiles).length}</div>
           <div className="text-gray-600">Categories</div>
         </div>
         <div className="bg-white p-4 rounded-lg border shadow-sm">
           <div className="text-2xl font-bold text-green-600">
-            {Object.values(categoriesData).reduce((acc, cat) => acc + Object.keys(cat).length, 0)}
+            {Object.values(categorizedFiles).reduce((acc, cat) => acc + Object.keys(cat).length, 0)}
           </div>
           <div className="text-gray-600">Subcategories</div>
         </div>
         <div className="bg-white p-4 rounded-lg border shadow-sm">
           <div className="text-2xl font-bold text-purple-600">
-            {Object.values(categoriesData).reduce((acc, cat) => 
-              acc + Object.values(cat).reduce((subAcc, docs) => subAcc + docs.length, 0), 0
-            )}
+            {files.length}
           </div>
-          <div className="text-gray-600">Documents</div>
+          <div className="text-gray-600">Total Files</div>
         </div>
       </div>
 
       {/* Categories Tree */}
       <div className="space-y-2">
-        {Object.entries(filterCategories(categoriesData, searchQuery)).map(([category, subcategories]) => (
+        {Object.entries(filteredCategorizedFiles).map(([category, subcategories]) => (
           <div key={category} className="border rounded-lg overflow-hidden shadow-sm bg-white">
             {/* Category Header */}
             <button
@@ -564,7 +411,7 @@ const CategoriesView: React.FC = () => {
             {expandedCategories[category] && (
               <div className="px-4 py-2 bg-gray-50">
                 <div className="space-y-2">
-                  {Object.entries(subcategories).map(([subcategory, documents]) => (
+                  {Object.entries(subcategories).map(([subcategory, subcategoryFiles]) => (
                     <div key={subcategory} className="bg-white rounded-lg border">
                       <button
                         className="w-full px-4 py-3 text-left font-medium flex items-center hover:bg-gray-50 transition-colors duration-200"
@@ -578,29 +425,29 @@ const CategoriesView: React.FC = () => {
                         <FileText className="w-4 h-4 mr-2 text-blue-400" />
                         <span className="text-gray-800">{subcategory}</span>
                         <span className="ml-auto text-sm text-gray-500">
-                          {documents.length} documents
+                          {subcategoryFiles.length} files
                         </span>
                       </button>
 
-                      {/* Documents */}
+                      {/* Files */}
                       {expandedSubcategories[`${category}-${subcategory}`] && (
                         <div className="px-4 pb-4 space-y-3">
-                          {documents.map((doc, index) => (
-                            <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                          {subcategoryFiles.map((file, index) => (
+                            <div key={file.id} className="bg-gray-50 p-4 rounded-lg border">
                               <div className="flex items-center mb-3">
                                 <File className="w-4 h-4 mr-2 text-gray-500" />
-                                <a
-                                  href={doc.link}
-                                  className="text-blue-600 hover:underline font-medium"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  {doc.document_name}
-                                </a>
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">{file.name}</div>
+                                  <div className="text-sm text-gray-500">
+                                    {formatFileSize(file.size)} • {file.type} • Uploaded {file.uploadDate.toLocaleDateString()}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="pl-6">
-                                {renderMetadata(doc.metadata, `${category}-${subcategory}-${index}`)}
-                              </div>
+                              {file.metadata && (
+                                <div className="pl-6">
+                                  {renderMetadata(file.metadata, `${category}-${subcategory}-${file.id}`)}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -615,7 +462,7 @@ const CategoriesView: React.FC = () => {
       </div>
 
       {/* No Results */}
-      {searchQuery && Object.keys(filterCategories(categoriesData, searchQuery)).length === 0 && (
+      {searchQuery && Object.keys(filteredCategorizedFiles).length === 0 && (
         <div className="text-center py-12">
           <div className="text-gray-400 text-lg">No results found for "{searchQuery}"</div>
           <div className="text-gray-500 mt-2">Try adjusting your search terms</div>
