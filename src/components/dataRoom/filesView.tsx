@@ -538,7 +538,10 @@ const FilesView: React.FC<FilesViewProps> = ({
                       <div className="flex items-center space-x-4">
                         <div className="relative">
                           <File className="flex-shrink-0 h-8 w-8 text-gray-400" />
-                          <HardDrive className="absolute -bottom-1 -right-1 h-3 w-3 text-blue-500" title="Stored in IndexedDB" />
+                          <HardDrive 
+                            className="absolute -bottom-1 -right-1 h-3 w-3 text-blue-500" 
+                            aria-label="Stored in IndexedDB"
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-900 truncate">
@@ -558,14 +561,14 @@ const FilesView: React.FC<FilesViewProps> = ({
                         </div>
                       </div>
                       <div className="flex space-x-2">
-                        <button
+                        {/* <button
                           onClick={() => startEditingMetadata(file.id, file.metadata)}
                           className="p-2 text-gray-400 hover:text-blue-600"
                           title="Edit Metadata"
                           disabled={isLoading}
                         >
                           <Edit3 className="h-5 w-5" />
-                        </button>
+                        </button> */}
                         <button
                           onClick={() => downloadFile(file)}
                           className="p-2 text-gray-400 hover:text-green-600"
@@ -619,7 +622,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                     </div>
 
                     {/* Metadata Editing */}
-                    {editingMetadata === file.id ? (
+                    {/* {editingMetadata === file.id ? (
                       <div className="space-y-2">
                         <textarea
                           value={metadataInput}
@@ -655,7 +658,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                           </div>
                         </div>
                       )
-                    )}
+                    )} */}
                   </div>
                 </li>
               ))}

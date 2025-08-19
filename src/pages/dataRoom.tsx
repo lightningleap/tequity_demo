@@ -97,7 +97,7 @@ const EnhancedDataRoom: React.FC = () => {
                 <div key={category} className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <span className="font-medium">{category}</span>
-                    <span className="text-sm text-gray-500">({count} files)</span>
+                    <span className="text-sm text-gray-500">({String(count)} files)</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <div className="w-32 bg-gray-200 rounded-full h-2">
