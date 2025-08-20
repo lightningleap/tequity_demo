@@ -46,7 +46,7 @@ export interface APIHealthResponse {
 }
 
 class DataRoomAPIService {
-  private baseURL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+  private baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
   private isConnected = false;
   private lastHealthCheck = 0;
   private healthCheckInterval = 30000; // 30 seconds
