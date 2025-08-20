@@ -7,9 +7,7 @@ export default function SignUp() {
     <div className="min-h-screen bg-white">
       <nav className="flex items-center justify-between p-6 lg:px-8">
         <div className="flex lg:flex-1">
-          <Link to="/" className="-m-1.5 p-1.5">
-            <span className="text-2xl font-bold text-gray-900">TEQUITY</span>
-          </Link>
+       <img src="logos/tequity-big-logo.png" alt="Tequity Logo" className="w-24" />
         </div>
       </nav>
 
