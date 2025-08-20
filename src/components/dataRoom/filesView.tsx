@@ -929,7 +929,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                       </div>
 
                       {/* Category Assignment */}
-                      <div className="flex items-center space-x-2 text-sm">
+                      {/* <div className="flex items-center space-x-2 text-sm">
                         <Tag className="h-4 w-4 text-gray-400" />
                         <span className="text-gray-600">Category:</span>
                         <select
@@ -966,7 +966,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                             ⚠️ Assign a category to view in Categories tab
                           </span>
                         )}
-                      </div>
+                      </div> */}
                     </div>
                   </li>
                 );
@@ -979,7 +979,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       {/* Loading State */}
       {isLoading && (
         <div className="text-center py-4">
-          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
+          {/* <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" /> */}
           <div className="max-w-md mx-auto w-full mt-3">
             <div className="indeterminate-bar"></div>
           </div>
