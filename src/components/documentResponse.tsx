@@ -18,10 +18,12 @@ import {
   ChevronRight,
   Wifi,
   WifiOff,
-  AlertTriangle
+  AlertTriangle,
+  Clock
 } from 'lucide-react'
 import { dataRoomAPI, APIQuestionResponse } from '../service/api'
 import { dataRoomDB } from '@/services/indexedDb'
+
 // Enhanced response interface for document-aware responses
 interface DocumentResponse {
   answer: string
@@ -40,6 +42,13 @@ interface DocumentResponse {
     file_name: string
     download_url: string
     category: string
+  }>
+  category?: string
+  timestamp?: string
+  contextDetails?: Array<{
+    text: string
+    row_number?: number
+    score?: number
   }>
 }
 
@@ -140,7 +149,11 @@ const DocumentAwareChatBot = () => {
             name: s.file_name,
             id: s.file_id,
             relevance: 0.8
-          }))
+          })),
+          // Enhanced API response details
+          category: apiResponse.category,
+          timestamp: apiResponse.timestamp,
+          contextDetails: apiResponse.context
         }
       } catch (apiError) {
         console.error('API request failed, falling back to local search:', apiError)
@@ -441,31 +454,69 @@ const DocumentAwareChatBot = () => {
               </div>
             )}
 
-            {/* Confidence Score */}
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600">Confidence:</span>
-              <div className="flex-1 bg-gray-200 rounded-full h-2">
-                <div 
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    documentResponse.confidence > 0.7 ? 'bg-green-600' :
-                    documentResponse.confidence > 0.4 ? 'bg-yellow-600' : 'bg-red-600'
-                  }`}
-                  style={{ width: `${documentResponse.confidence * 100}%` }}
-                />
+            {/* API Response Details */}
+            {documentResponse.category && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-600">Category:</span>
+                <Badge variant="secondary" className="text-xs">
+                  {documentResponse.category}
+                </Badge>
               </div>
-              <span className="font-medium">{(documentResponse.confidence * 100).toFixed(0)}%</span>
-            </div>
+            )}
 
-            {/* Context */}
-            <div className="bg-white p-3 rounded border">
-              <div className="flex items-start gap-2 mb-2">
-                <Quote className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                <span className="text-sm font-medium text-gray-700">Context</span>
+            {documentResponse.timestamp && (
+              <div className="flex items-center gap-2 text-sm">
+                <Clock className="h-4 w-4 text-gray-500" />
+                <span className="text-gray-600">Query Time:</span>
+                <span className="font-medium text-xs">
+                  {new Date(documentResponse.timestamp).toLocaleString()}
+                </span>
               </div>
-              <p className="text-sm text-gray-600 leading-relaxed pl-6">
-                {documentResponse.context}
-              </p>
-            </div>
+            )}
+
+            {/* Context Details */}
+            {documentResponse.contextDetails && documentResponse.contextDetails.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">Context Matches</span>
+                {documentResponse.contextDetails.map((contextItem, index) => (
+                  <div key={index} className="bg-white p-3 rounded border">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Quote className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                        {contextItem.row_number && (
+                          <Badge variant="outline" className="text-xs">
+                            Row {contextItem.row_number}
+                          </Badge>
+                        )}
+                      </div>
+                      {contextItem.score && (
+                        <Badge variant="secondary" className="text-xs">
+                          {(contextItem.score * 100).toFixed(0)}% match
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {contextItem.text.length > 200 
+                        ? `${contextItem.text.substring(0, 200)}...`
+                        : contextItem.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Fallback Context for non-detailed responses */}
+            {(!documentResponse.contextDetails || documentResponse.contextDetails.length === 0) && documentResponse.context && (
+              <div className="bg-white p-3 rounded border">
+                <div className="flex items-start gap-2 mb-2">
+                  <Quote className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-sm font-medium text-gray-700">Context</span>
+                </div>
+                <p className="text-sm text-gray-600 leading-relaxed pl-6">
+                  {documentResponse.context}
+                </p>
+              </div>
+            )}
 
             {/* Related Documents */}
             {documentResponse.relatedDocuments && documentResponse.relatedDocuments.length > 0 && (
