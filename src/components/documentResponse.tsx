@@ -21,7 +21,7 @@ import {
   AlertTriangle
 } from 'lucide-react'
 import { dataRoomAPI, APIQuestionResponse } from '../service/api'
-
+import { dataRoomDB } from '@/services/indexedDb'
 // Enhanced response interface for document-aware responses
 interface DocumentResponse {
   answer: string
