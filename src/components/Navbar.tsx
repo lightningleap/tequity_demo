@@ -22,7 +22,7 @@ const Navbar = () => {
             <img src="logos/tequity-big-logo.png" alt="Tequity Logo" className="w-24" />
 
             </div>
-            <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+            {/* <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
               {isAuthenticated && (
                 <>
                 <Link
@@ -39,7 +39,7 @@ const Navbar = () => {
                 </Link>
                   </>
               )}
-            </div>
+            </div> */}
           </div>
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             {isAuthenticated ? (

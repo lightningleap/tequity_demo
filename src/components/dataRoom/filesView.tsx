@@ -39,6 +39,7 @@ const FilesView: React.FC<FilesViewProps> = ({
   const [dbStats, setDbStats] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('offline');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
+  const [currentProcessingFile, setCurrentProcessingFile] = useState<string | null>(null);
 
   // Load files from both sources on component mount
   useEffect(() => {
@@ -250,6 +251,7 @@ const FilesView: React.FC<FilesViewProps> = ({
 
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
+        setCurrentProcessingFile(file.name);
         console.log(`📁 FilesView: Processing file ${i + 1}/${fileList.length}:`, {
           name: file.name,
           size: file.size,
@@ -466,6 +468,9 @@ const FilesView: React.FC<FilesViewProps> = ({
           
           newUploadedFiles.push(fallbackFile);
         }
+
+        // After each file completes, clear the name if next loop won't set immediately
+        setCurrentProcessingFile(null);
       }
 
       console.log(`✅ FilesView: Upload process completed. ${newUploadedFiles.length} files processed`);
@@ -476,6 +481,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       alert('Failed to upload files. Check console for details.');
     } finally {
       setIsLoading(false);
+      setCurrentProcessingFile(null);
     }
   };
 
@@ -707,6 +713,7 @@ const FilesView: React.FC<FilesViewProps> = ({
 
     try {
       setIsLoading(true);
+      if (file) setCurrentProcessingFile(file.name);
       console.log(`☁️ FilesView: Attempting backend upload for retry...`);
       const apiResponse = await dataRoomAPI.uploadFile(file.file);
       console.log(`✅ FilesView: Retry backend upload successful:`, apiResponse);
@@ -734,6 +741,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       console.error('❌ FilesView: Retry sync failed:', error);
     } finally {
       setIsLoading(false);
+      setCurrentProcessingFile(null);
     }
   };
 
@@ -972,6 +980,12 @@ const FilesView: React.FC<FilesViewProps> = ({
       {isLoading && (
         <div className="text-center py-4">
           <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
+          <div className="max-w-md mx-auto w-full mt-3">
+            <div className="indeterminate-bar"></div>
+          </div>
+          {currentProcessingFile && (
+            <p className="text-xs text-gray-500 mt-1">Current file: {currentProcessingFile}</p>
+          )}
           <p className="text-sm text-gray-600 mt-2">
             {connectionStatus === 'online' ? 'Processing files with AI...' : 'Processing files locally...'}
           </p>
