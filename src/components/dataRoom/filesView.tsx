@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { dataRoomDB, StoredFile } from '../../services/indexedDb';
-import { Upload, File, Download, Trash2, Edit3, Tag, AlertCircle, Database, RefreshCw, HardDrive } from 'lucide-react';
+import { dataRoomAPI, APIFileResponse } from '../../service/api';
+import { Upload, File, Download, Trash2, Tag, AlertCircle, Database, RefreshCw, HardDrive, Wifi, WifiOff, Cloud } from 'lucide-react';
 
-// Convert StoredFile to UploadedFile format for compatibility
 export interface UploadedFile {
   id: string;
   file: File;
@@ -13,6 +13,10 @@ export interface UploadedFile {
   category?: string;
   subcategory?: string;
   metadata?: Record<string, any>;
+  // New fields for hybrid storage
+  isBackendSynced?: boolean;
+  backendFileId?: string;
+  aiProcessed?: boolean;
 }
 
 interface FilesViewProps {
@@ -22,6 +26,8 @@ interface FilesViewProps {
   onDatabaseStats: (stats: any) => void;
 }
 
+type ConnectionStatus = 'online' | 'offline' | 'backend-only' | 'local-only';
+
 const FilesView: React.FC<FilesViewProps> = ({ 
   files, 
   onFilesChange, 
@@ -29,49 +35,196 @@ const FilesView: React.FC<FilesViewProps> = ({
   onDatabaseStats 
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [editingMetadata, setEditingMetadata] = useState<string | null>(null);
-  const [metadataInput, setMetadataInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [dbStats, setDbStats] = useState<any>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('offline');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
 
-  // Load files from IndexedDB on component mount
+  // Load files from both sources on component mount
   useEffect(() => {
-    loadFilesFromDB();
+    console.log('🔄 FilesView: Component mounted, loading files from both sources...');
+    loadFilesFromBothSources();
     loadDatabaseStats();
+    checkConnectionStatus();
+    
+    // Check connection status periodically
+    const interval = setInterval(checkConnectionStatus, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  const loadFilesFromDB = async () => {
+  const checkConnectionStatus = async () => {
+    console.log('🌐 FilesView: Checking connection status...');
+    const isOnline = navigator.onLine;
+    console.log('📶 Navigator online status:', isOnline);
+    
+    if (!isOnline) {
+      console.log('❌ FilesView: Device is offline');
+      setConnectionStatus('offline');
+      return;
+    }
+    
     try {
-      setIsLoading(true);
-      const storedFiles = await dataRoomDB.getAllFiles();
-      const uploadedFiles = await Promise.all(
-        storedFiles.map(async (storedFile) => ({
-          id: storedFile.id,
-          file: dataRoomDB.createFileFromStored(storedFile),
-          name: storedFile.name,
-          size: storedFile.size,
-          type: storedFile.type,
-          uploadDate: storedFile.uploadDate,
-          category: storedFile.category,
-          subcategory: storedFile.subcategory,
-          metadata: storedFile.metadata
-        }))
-      );
-      onFilesChange(uploadedFiles);
+      console.log('🔍 FilesView: Testing backend health...');
+      const isBackendHealthy = await dataRoomAPI.checkHealth();
+      console.log('🏥 Backend health check result:', isBackendHealthy);
+      
+      if (isBackendHealthy) {
+        console.log('✅ FilesView: Backend is healthy, setting status to online');
+        setConnectionStatus('online');
+      } else {
+        console.log('⚠️ FilesView: Backend unhealthy, local-only mode');
+        setConnectionStatus('local-only');
+      }
     } catch (error) {
-      console.error('Failed to load files from database:', error);
+      console.error('❌ FilesView: Backend health check failed:', error);
+      setConnectionStatus('local-only');
+    }
+  };
+
+  const loadFilesFromBothSources = async () => {
+    try {
+      console.log('📂 FilesView: Starting to load files from both sources...');
+      setIsLoading(true);
+      
+      // Always load from IndexedDB first (offline capability)
+      console.log('💾 FilesView: Loading files from IndexedDB...');
+      const localFiles = await loadFilesFromIndexedDB();
+      console.log(`📊 FilesView: Loaded ${localFiles.length} files from IndexedDB`);
+      onFilesChange(localFiles);
+      
+      // Try to sync with backend if available
+      if (connectionStatus === 'online') {
+        console.log('🔄 FilesView: Connection online, attempting backend sync...');
+        await syncWithBackend();
+      } else {
+        console.log('📴 FilesView: Connection not online, skipping backend sync');
+      }
+    } catch (error) {
+      console.error('❌ FilesView: Failed to load files:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const loadFilesFromIndexedDB = async (): Promise<UploadedFile[]> => {
+    console.log('💾 FilesView: Fetching stored files from IndexedDB...');
+    const storedFiles = await dataRoomDB.getAllFiles();
+    console.log(`📁 FilesView: Retrieved ${storedFiles.length} stored files from IndexedDB`);
+    
+    const uploadedFiles = storedFiles.map((storedFile, index) => {
+      console.log(`📄 FilesView: Processing stored file ${index + 1}/${storedFiles.length}:`, {
+        id: storedFile.id,
+        name: storedFile.name,
+        size: storedFile.size,
+        category: storedFile.category,
+        subcategory: storedFile.subcategory,
+        uploadDate: storedFile.uploadDate,
+        metadata: storedFile.metadata
+      });
+
+      const uploadedFile: UploadedFile = {
+        id: storedFile.id,
+        file: dataRoomDB.createFileFromStored(storedFile),
+        name: storedFile.name,
+        size: storedFile.size,
+        type: storedFile.type,
+        uploadDate: storedFile.uploadDate,
+        category: storedFile.category,
+        subcategory: storedFile.subcategory,
+        metadata: storedFile.metadata,
+        isBackendSynced: storedFile.metadata?.isBackendSynced || false,
+        backendFileId: storedFile.metadata?.backendFileId,
+        aiProcessed: storedFile.metadata?.aiProcessed || false
+      };
+
+      console.log(`✅ FilesView: Converted stored file to uploaded file:`, {
+        id: uploadedFile.id,
+        name: uploadedFile.name,
+        isBackendSynced: uploadedFile.isBackendSynced,
+        backendFileId: uploadedFile.backendFileId,
+        aiProcessed: uploadedFile.aiProcessed,
+        metadataKeys: Object.keys(uploadedFile.metadata || {})
+      });
+
+      return uploadedFile;
+    });
+    
+    console.log(`🔄 FilesView: Converted ${uploadedFiles.length} stored files to uploaded files`);
+    return uploadedFiles;
+  };
+
+  const syncWithBackend = async () => {
+    if (connectionStatus !== 'online') {
+      console.log('📴 FilesView: Cannot sync - not online');
+      return;
+    }
+    
+    try {
+      console.log('🔄 FilesView: Starting backend sync...');
+      setSyncStatus('syncing');
+      
+      console.log('📡 FilesView: Fetching files from backend...');
+      const backendFiles = await dataRoomAPI.getFiles();
+      console.log(`📊 FilesView: Retrieved ${backendFiles.length} files from backend:`, backendFiles);
+      
+      // Update local files with backend sync status
+      console.log('🔄 FilesView: Updating local files with backend status...');
+      const updatedFiles = await Promise.all(
+        files.map(async (file, index) => {
+          console.log(`🔍 FilesView: Processing file ${index + 1}/${files.length} for sync:`, {
+            localFileId: file.id,
+            localBackendFileId: file.backendFileId,
+            localIsBackendSynced: file.isBackendSynced
+          });
+
+          const backendFile = backendFiles.find(bf => bf.file_id === file.backendFileId);
+          
+          if (backendFile) {
+            console.log(`✅ FilesView: Found matching backend file:`, {
+              backendFileId: backendFile.file_id,
+              backendFileName: backendFile.file_name,
+              backendCategory: backendFile.category,
+              backendNumRecords: backendFile.num_records
+            });
+
+            const updatedFile = {
+              ...file,
+              isBackendSynced: true,
+              aiProcessed: true
+            };
+
+            console.log(`🔄 FilesView: Updated file sync status:`, {
+              fileId: updatedFile.id,
+              isBackendSynced: updatedFile.isBackendSynced,
+              aiProcessed: updatedFile.aiProcessed
+            });
+
+            return updatedFile;
+          } else {
+            console.log(`❌ FilesView: No matching backend file found for local file ${file.id}`);
+            return file;
+          }
+        })
+      );
+      
+      console.log('✅ FilesView: Sync completed successfully');
+      onFilesChange(updatedFiles);
+      setSyncStatus('idle');
+    } catch (error) {
+      console.error('❌ FilesView: Sync failed:', error);
+      setSyncStatus('error');
+    }
+  };
+
   const loadDatabaseStats = async () => {
     try {
+      console.log('📊 FilesView: Loading database stats...');
       const stats = await dataRoomDB.getStats();
+      console.log('📈 FilesView: Database stats loaded:', stats);
       setDbStats(stats);
       onDatabaseStats(stats);
     } catch (error) {
-      console.error('Failed to load database stats:', error);
+      console.error('❌ FilesView: Failed to load database stats:', error);
     }
   };
 
@@ -84,58 +237,143 @@ const FilesView: React.FC<FilesViewProps> = ({
   };
 
   const handleFileChange = async (fileList: FileList | null) => {
-    console.log('handleFileChange triggered', { fileListLength: fileList?.length || 0 });
     if (!fileList) {
-      console.log('No files selected');
+      console.log('❌ FilesView: No files provided');
       return;
     }
-  
+
+    console.log(`📤 FilesView: Starting upload of ${fileList.length} files...`);
     setIsLoading(true);
-    console.log('Starting file upload process...');
     
     try {
       const newUploadedFiles: UploadedFile[] = [];
-      console.log(`Processing ${fileList.length} file(s)`);
-  
-      for (const [index, file] of Array.from(fileList).entries()) {
-        console.log(`Processing file ${index + 1}/${fileList.length}:`, {
+
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        console.log(`📁 FilesView: Processing file ${i + 1}/${fileList.length}:`, {
           name: file.name,
           size: file.size,
-          type: file.type
+          type: file.type,
+          lastModified: new Date(file.lastModified)
         });
-  
-        const generatedMetadata = generateSampleMetadata(file);
-        console.log('Generated metadata:', JSON.stringify(generatedMetadata, null, 2));
-  
-        const autoCategory = getAutoCategoryFromFilename(file.name);
-        console.log('Auto-categorized as:', autoCategory);
-        
-        const uploadedFile: UploadedFile = {
-          id: Math.random().toString(36).substr(2, 9),
-          file,
-          name: file.name,
-          size: file.size,
-          type: file.type || file.name.split('.').pop()?.toUpperCase() || 'File',
-          uploadDate: new Date(),
-          metadata: generatedMetadata,
-          category: autoCategory.category,
-          subcategory: autoCategory.subcategory
-        };
-  
-        console.log('Created uploadedFile object:', {
-          id: uploadedFile.id,
-          name: uploadedFile.name,
-          type: uploadedFile.type,
-          category: uploadedFile.category,
-          subcategory: uploadedFile.subcategory
-        });
-  
+
+        let uploadedFile: UploadedFile;
+        let isBackendSynced = false;
+        let backendFileId: string | undefined;
+        let aiProcessed = false;
+
         try {
-          // Save to IndexedDB
-          console.log('Converting file to ArrayBuffer...');
-          const fileData = await file.arrayBuffer();
-          console.log('File converted to ArrayBuffer, size:', fileData.byteLength, 'bytes');
-  
+          // Try backend upload first if online
+          if (connectionStatus === 'online') {
+            console.log(`☁️ FilesView: Attempting backend upload for ${file.name}...`);
+            const apiResponse = await dataRoomAPI.uploadFile(file);
+            console.log(`✅ FilesView: Backend upload successful:`, {
+              fileId: apiResponse.file_id,
+              fileName: apiResponse.file_name,
+              category: apiResponse.category,
+              numRecords: apiResponse.num_records,
+              numSheets: apiResponse.num_sheets,
+              fileSizeBytes: apiResponse.file_size_bytes
+            });
+            
+            const enhancedMetadata = {
+              // Only backend metadata when backend provides data
+              backend_file_id: apiResponse.file_id,
+              num_records: apiResponse.num_records,
+              num_sheets: apiResponse.num_sheets,
+              point_ids: apiResponse.point_ids,
+              backend_category: apiResponse.category,
+              processed_by_ai: true,
+              semantic_search_enabled: true,
+              ingestion_timestamp: apiResponse.ingestion_timestamp,
+              isBackendSynced: true,
+              aiProcessed: true,
+              file_size: apiResponse.file_size_bytes,
+              upload_date: new Date(apiResponse.ingestion_timestamp).toISOString().split('T')[0],
+              file_type: file.type || 'unknown',
+              stored_in_indexeddb: true,
+              backend_processed: true
+            };
+
+            console.log(`📊 FilesView: Enhanced metadata created:`, {
+              backendFileId: enhancedMetadata.backend_file_id,
+              numRecords: enhancedMetadata.num_records,
+              backendCategory: enhancedMetadata.backend_category,
+              processedByAI: enhancedMetadata.processed_by_ai,
+              localMetadataKeys: Object.keys(enhancedMetadata).filter(k => !k.startsWith('backend_') && !k.startsWith('processed_'))
+            });
+            
+            uploadedFile = {
+              id: apiResponse.file_id,
+              file,
+              name: apiResponse.file_name,
+              size: apiResponse.file_size_bytes,
+              type: file.type,
+              uploadDate: new Date(apiResponse.ingestion_timestamp),
+              metadata: enhancedMetadata,
+              category: apiResponse.category,
+              subcategory: dataRoomAPI.getSubcategoryFromCategory(apiResponse.category),
+              isBackendSynced: true,
+              backendFileId: apiResponse.file_id,
+              aiProcessed: true
+            };
+
+            console.log(`✅ FilesView: Backend uploaded file object created:`, {
+              id: uploadedFile.id,
+              name: uploadedFile.name,
+              category: uploadedFile.category,
+              subcategory: uploadedFile.subcategory,
+              isBackendSynced: uploadedFile.isBackendSynced,
+              aiProcessed: uploadedFile.aiProcessed
+            });
+
+            isBackendSynced = true;
+            backendFileId = apiResponse.file_id;
+            aiProcessed = true;
+          } else {
+            // Fallback to local-only storage
+            console.log(`💾 FilesView: Backend not available, using local-only storage for ${file.name}`);
+            const localId = Math.random().toString(36).substr(2, 9);
+            const autoCategory = getAutoCategoryFromFilename(file.name);
+            
+            console.log(`🏷️ FilesView: Auto-categorized file:`, {
+              fileName: file.name,
+              autoCategory: autoCategory.category,
+              autoSubcategory: autoCategory.subcategory
+            });
+            
+            const localMetadata = generateLocalMetadata(file);
+            console.log(`📊 FilesView: Generated local metadata:`, localMetadata);
+            
+            uploadedFile = {
+              id: localId,
+              file,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              uploadDate: new Date(),
+              metadata: localMetadata,
+              category: autoCategory.category,
+              subcategory: autoCategory.subcategory,
+              isBackendSynced: false,
+              aiProcessed: false
+            };
+
+            console.log(`💾 FilesView: Local-only uploaded file object created:`, {
+              id: uploadedFile.id,
+              name: uploadedFile.name,
+              category: uploadedFile.category,
+              subcategory: uploadedFile.subcategory,
+              isBackendSynced: uploadedFile.isBackendSynced,
+              aiProcessed: uploadedFile.aiProcessed
+            });
+          }
+
+          // Always save to IndexedDB for offline access
+          console.log(`💾 FilesView: Saving to IndexedDB...`);
+          const fileBuffer = await file.arrayBuffer();
+          console.log(`📊 FilesView: File converted to buffer, size: ${fileBuffer.byteLength} bytes`);
+
           const storedFile: StoredFile = {
             id: uploadedFile.id,
             name: uploadedFile.name,
@@ -144,147 +382,178 @@ const FilesView: React.FC<FilesViewProps> = ({
             uploadDate: uploadedFile.uploadDate,
             category: uploadedFile.category,
             subcategory: uploadedFile.subcategory,
-            metadata: uploadedFile.metadata,
-            fileData: fileData
+            metadata: {
+              ...uploadedFile.metadata,
+              isBackendSynced,
+              backendFileId,
+              aiProcessed
+            },
+            fileData: fileBuffer
           };
-  
-          console.log('Saving to IndexedDB...', {
+          
+          console.log(`💾 FilesView: Storing file in IndexedDB:`, {
             id: storedFile.id,
             name: storedFile.name,
-            size: storedFile.size,
-            type: storedFile.type
+            category: storedFile.category,
+            subcategory: storedFile.subcategory,
+            metadataKeys: Object.keys(storedFile.metadata || {}),
+            fileDataSize: storedFile.fileData.byteLength
           });
-  
+
           await dataRoomDB.saveFile(file, storedFile);
-          console.log('Successfully saved to IndexedDB');
+          console.log(`✅ FilesView: File saved to IndexedDB successfully`);
           
           newUploadedFiles.push(uploadedFile);
-          console.log('Added to newUploadedFiles array');
-        } catch (saveError) {
-          console.error('Error saving file to IndexedDB:', {
+
+        } catch (backendError) {
+          console.error(`❌ FilesView: Backend upload failed for ${file.name}, using local storage only:`, backendError);
+          
+          // Fallback: Local storage only
+          const localId = Math.random().toString(36).substr(2, 9);
+          const autoCategory = getAutoCategoryFromFilename(file.name);
+          
+          console.log(`🔄 FilesView: Creating fallback local file:`, {
+            localId,
             fileName: file.name,
-            error: saveError
+            autoCategory: autoCategory.category,
+            autoSubcategory: autoCategory.subcategory
           });
-          throw saveError; // Re-throw to be caught by the outer catch
+
+          const localMetadata = {
+            ...generateLocalMetadata(file),
+            isBackendSynced: false,
+            aiProcessed: false,
+            sync_pending: true
+          };
+
+          console.log(`📊 FilesView: Fallback metadata created:`, localMetadata);
+          
+          const fallbackFile: UploadedFile = {
+            id: localId,
+            file,
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            uploadDate: new Date(),
+            metadata: localMetadata,
+            category: autoCategory.category,
+            subcategory: autoCategory.subcategory,
+            isBackendSynced: false,
+            aiProcessed: false
+          };
+
+          const fileBuffer = await file.arrayBuffer();
+          const storedFile: StoredFile = {
+            id: fallbackFile.id,
+            name: fallbackFile.name,
+            size: fallbackFile.size,
+            type: fallbackFile.type,
+            uploadDate: fallbackFile.uploadDate,
+            category: fallbackFile.category,
+            subcategory: fallbackFile.subcategory,
+            metadata: fallbackFile.metadata,
+            fileData: fileBuffer
+          };
+          
+          console.log(`💾 FilesView: Storing fallback file in IndexedDB:`, {
+            id: storedFile.id,
+            name: storedFile.name,
+            syncPending: storedFile.metadata?.sync_pending
+          });
+
+          await dataRoomDB.saveFile(file, storedFile);
+          console.log(`✅ FilesView: Fallback file saved to IndexedDB`);
+          
+          newUploadedFiles.push(fallbackFile);
         }
       }
-  
-      console.log('All files processed. Updating parent component...');
+
+      console.log(`✅ FilesView: Upload process completed. ${newUploadedFiles.length} files processed`);
       onFilesChange([...files, ...newUploadedFiles]);
-      console.log('Parent component updated. Loading database stats...');
-      
       await loadDatabaseStats();
-      console.log('Database stats loaded successfully');
     } catch (error) {
-      console.error('Failed to save files:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString()
-      });
-      alert('Failed to save files to database. Check console for details.');
+      console.error('❌ FilesView: File upload failed:', error);
+      alert('Failed to upload files. Check console for details.');
     } finally {
-      console.log('File upload process completed');
       setIsLoading(false);
     }
   };
 
   const getAutoCategoryFromFilename = (filename: string): { category: string; subcategory: string } => {
+    console.log(`🏷️ FilesView: Auto-categorizing filename: ${filename}`);
     const name = filename.toLowerCase();
     
+    let result = { category: 'general', subcategory: 'Miscellaneous' };
+    
     if (name.includes('financial') || name.includes('revenue') || name.includes('income') || name.includes('budget')) {
-      return { category: 'Financial', subcategory: 'Financial Statements' };
-    }
-    if (name.includes('customer') || name.includes('client') || name.includes('sales')) {
-      return { category: 'Customers', subcategory: 'Customer Data' };
-    }
-    if (name.includes('contract') || name.includes('agreement') || name.includes('legal')) {
-      return { category: 'Legal', subcategory: 'Contracts' };
-    }
-    if (name.includes('employee') || name.includes('hr') || name.includes('payroll')) {
-      return { category: 'Corporate', subcategory: 'HR Documents' };
-    }
-    if (name.includes('vendor') || name.includes('supplier') || name.includes('procurement')) {
-      return { category: 'Operations', subcategory: 'Vendor Management' };
-    }
-    if (name.includes('cap') && name.includes('table') || name.includes('equity') || name.includes('shares')) {
-      return { category: 'Corporate', subcategory: 'Cap Table' };
+      result = { category: 'financial', subcategory: 'Financial Statements' };
+    } else if (name.includes('customer') || name.includes('client') || name.includes('sales')) {
+      result = { category: 'sales', subcategory: 'Customer Data' };
+    } else if (name.includes('contract') || name.includes('agreement') || name.includes('legal')) {
+      result = { category: 'legal', subcategory: 'Contracts' };
+    } else if (name.includes('employee') || name.includes('hr') || name.includes('payroll')) {
+      result = { category: 'hr', subcategory: 'HR Documents' };
+    } else if (name.includes('inventory') || name.includes('stock') || name.includes('warehouse')) {
+      result = { category: 'inventory', subcategory: 'Inventory Management' };
+    } else if (name.includes('marketing') || name.includes('campaign') || name.includes('promotion')) {
+      result = { category: 'marketing', subcategory: 'Marketing Materials' };
     }
     
-    return { category: 'General', subcategory: 'Miscellaneous' };
+    console.log(`🏷️ FilesView: Auto-categorization result:`, result);
+    return result;
   };
 
-  const generateSampleMetadata = (file: File): Record<string, any> => {
+  const generateLocalMetadata = (file: File): Record<string, any> => {
+    console.log(`📊 FilesView: Generating local metadata for: ${file.name}`);
+    
     const baseMetadata = {
       file_size: file.size,
       upload_date: new Date().toISOString().split('T')[0],
       file_type: file.type || 'unknown',
       last_modified: file.lastModified ? new Date(file.lastModified).toISOString().split('T')[0] : null,
-      stored_in_indexeddb: true
+      stored_in_indexeddb: true,
+      local_generation: true
     };
 
+    console.log(`📊 FilesView: Base metadata:`, baseMetadata);
+
     const name = file.name.toLowerCase();
+    let enhancedMetadata = { ...baseMetadata };
 
     if (name.includes('financial') || name.includes('revenue')) {
-      return {
-        ...baseMetadata,
+      const financialData = {
         period: "2024-Q4",
         total_revenue: Math.floor(Math.random() * 10000000) + 1000000,
         net_income: Math.floor(Math.random() * 2000000) + 500000,
         gross_margin: Math.random() * 0.3 + 0.6,
         regions: ["North America", "Europe", "Asia"],
-        currency: "USD",
-        year_over_year_growth: Math.random() * 0.5 + 0.1
+        currency: "USD"
       };
-    }
-
-    if (name.includes('customer') || name.includes('client')) {
-      return {
-        ...baseMetadata,
+      enhancedMetadata = { ...baseMetadata, ...financialData };
+      console.log(`💰 FilesView: Added financial metadata:`, financialData);
+    } else if (name.includes('customer') || name.includes('client')) {
+      const customerData = {
         total_customers: Math.floor(Math.random() * 500) + 50,
         active_customers: Math.floor(Math.random() * 400) + 40,
         churn_rate: Math.random() * 0.1 + 0.05,
         avg_contract_value: Math.floor(Math.random() * 100000) + 10000,
-        top_industries: ["Technology", "Healthcare", "Finance", "Retail"],
-        satisfaction_score: Math.random() * 2 + 8,
-        customer_acquisition_cost: Math.floor(Math.random() * 5000) + 1000
+        top_industries: ["Technology", "Healthcare", "Finance", "Retail"]
       };
+      enhancedMetadata = { ...baseMetadata, ...customerData };
+      console.log(`👥 FilesView: Added customer metadata:`, customerData);
+    } else {
+      const genericData = {
+        description: "Business document",
+        status: "Active",
+        version: "1.0",
+        tags: ["business", "document"]
+      };
+      enhancedMetadata = { ...baseMetadata, ...genericData };
+      console.log(`📄 FilesView: Added generic metadata:`, genericData);
     }
 
-    if (name.includes('contract') || name.includes('legal')) {
-      return {
-        ...baseMetadata,
-        contract_count: Math.floor(Math.random() * 100) + 10,
-        total_value: Math.floor(Math.random() * 50000000) + 5000000,
-        expiring_soon: Math.floor(Math.random() * 10) + 1,
-        auto_renewal: Math.random() > 0.5,
-        avg_duration_months: Math.floor(Math.random() * 24) + 12,
-        compliance_status: "Compliant"
-      };
-    }
-
-    if (name.includes('employee') || name.includes('hr')) {
-      return {
-        ...baseMetadata,
-        total_employees: Math.floor(Math.random() * 200) + 50,
-        departments: ["Engineering", "Sales", "Marketing", "Operations"],
-        avg_salary: Math.floor(Math.random() * 50000) + 70000,
-        retention_rate: Math.random() * 0.1 + 0.85,
-        remote_percentage: Math.random() * 0.5 + 0.3,
-        diversity_metrics: {
-          gender_ratio: 0.45,
-          age_distribution: "25-45 years average"
-        }
-      };
-    }
-
-    return {
-      ...baseMetadata,
-      description: "Business document",
-      status: "Active",
-      version: "1.0",
-      tags: ["business", "document"],
-      importance_level: "Medium"
-    };
+    console.log(`✅ FilesView: Final metadata generated:`, enhancedMetadata);
+    return enhancedMetadata;
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -303,18 +572,36 @@ const FilesView: React.FC<FilesViewProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+    console.log(`🎯 FilesView: Files dropped, processing ${e.dataTransfer.files.length} files`);
     handleFileChange(e.dataTransfer.files);
   };
 
   const removeFile = async (id: string) => {
     try {
+      console.log(`🗑️ FilesView: Removing file with ID: ${id}`);
       setIsLoading(true);
+      const file = files.find(f => f.id === id);
+      console.log(`📁 FilesView: Found file to remove:`, {
+        id: file?.id,
+        name: file?.name,
+        isBackendSynced: file?.isBackendSynced,
+        backendFileId: file?.backendFileId
+      });
+      
+      // Remove from IndexedDB
+      console.log(`💾 FilesView: Removing from IndexedDB...`);
       await dataRoomDB.deleteFile(id);
+      console.log(`✅ FilesView: File removed from IndexedDB`);
+      
+      // Note: Backend doesn't have delete endpoint in the provided API
+      // Would need to add delete functionality to backend
+      
       onFilesChange(files.filter(file => file.id !== id));
       await loadDatabaseStats();
+      console.log(`✅ FilesView: File removal completed`);
     } catch (error) {
-      console.error('Failed to delete file:', error);
-      alert('Failed to delete file from database');
+      console.error('❌ FilesView: Failed to delete file:', error);
+      alert('Failed to delete file');
     } finally {
       setIsLoading(false);
     }
@@ -322,9 +609,47 @@ const FilesView: React.FC<FilesViewProps> = ({
 
   const downloadFile = async (uploadedFile: UploadedFile) => {
     try {
-      // Get fresh file data from IndexedDB
+      console.log(`⬇️ FilesView: Downloading file:`, {
+        id: uploadedFile.id,
+        name: uploadedFile.name,
+        isBackendSynced: uploadedFile.isBackendSynced,
+        backendFileId: uploadedFile.backendFileId,
+        connectionStatus
+      });
+
+      if (uploadedFile.isBackendSynced && uploadedFile.backendFileId && connectionStatus === 'online') {
+        console.log(`☁️ FilesView: Attempting backend download...`);
+        try {
+          const blob = await dataRoomAPI.downloadFile(uploadedFile.backendFileId);
+          console.log(`✅ FilesView: Backend download successful, blob size: ${blob.size}`);
+          
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = uploadedFile.name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          console.log(`✅ FilesView: Backend download completed`);
+          return;
+        } catch (backendError) {
+          console.warn('⚠️ FilesView: Backend download failed, falling back to local:', backendError);
+        }
+      }
+      
+      // Fallback to IndexedDB
+      console.log(`💾 FilesView: Attempting IndexedDB download...`);
       const storedFile = await dataRoomDB.getFile(uploadedFile.id);
+      
       if (storedFile) {
+        console.log(`✅ FilesView: Retrieved file from IndexedDB:`, {
+          id: storedFile.id,
+          name: storedFile.name,
+          size: storedFile.size,
+          fileDataSize: storedFile.fileData.byteLength
+        });
+
         const file = dataRoomDB.createFileFromStored(storedFile);
         const url = URL.createObjectURL(file);
         const a = document.createElement('a');
@@ -334,134 +659,179 @@ const FilesView: React.FC<FilesViewProps> = ({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        console.log(`✅ FilesView: IndexedDB download completed`);
+      } else {
+        console.error(`❌ FilesView: File not found in IndexedDB`);
       }
     } catch (error) {
-      console.error('Failed to download file:', error);
+      console.error('❌ FilesView: Failed to download file:', error);
       alert('Failed to download file');
     }
   };
 
-  const startEditingMetadata = (fileId: string, currentMetadata: any) => {
-    setEditingMetadata(fileId);
-    setMetadataInput(JSON.stringify(currentMetadata, null, 2));
-  };
-
-  const saveMetadata = async (fileId: string) => {
-    try {
-      const parsedMetadata = JSON.parse(metadataInput);
-      
-      // Update IndexedDB
-      await dataRoomDB.updateFile(fileId, { metadata: parsedMetadata });
-      
-      // Update local state
-      onFileUpdate(fileId, { metadata: parsedMetadata });
-      
-      setEditingMetadata(null);
-      setMetadataInput('');
-    } catch (error) {
-      alert('Invalid JSON format or database error');
-      console.error('Failed to save metadata:', error);
-    }
-  };
-
   const assignToCategory = async (fileId: string, category: string) => {
-    let subcategory = 'General';
-    switch (category) {
-      case 'Financial': subcategory = 'Financial Statements'; break;
-      case 'Legal': subcategory = 'Contracts'; break;
-      case 'Customers': subcategory = 'Customer Data'; break;
-      case 'Corporate': subcategory = 'Corporate Documents'; break;
-      case 'Operations': subcategory = 'Operational Data'; break;
-      default: subcategory = 'Miscellaneous';
-    }
+    console.log(`🏷️ FilesView: Assigning category to file:`, { fileId, category });
+    const subcategory = dataRoomAPI.getSubcategoryFromCategory(category);
+    console.log(`🏷️ FilesView: Subcategory determined:`, subcategory);
     
     try {
       // Update IndexedDB
+      console.log(`💾 FilesView: Updating category in IndexedDB...`);
       await dataRoomDB.updateFile(fileId, { category, subcategory });
+      console.log(`✅ FilesView: Category updated in IndexedDB`);
       
       // Update local state
       onFileUpdate(fileId, { category, subcategory });
       
       await loadDatabaseStats();
+      console.log(`✅ FilesView: Category assignment completed`);
     } catch (error) {
-      console.error('Failed to update category:', error);
-      alert('Failed to update category in database');
+      console.error('❌ FilesView: Failed to update category:', error);
+      alert('Failed to update category');
     }
   };
 
-  const clearAllFiles = async () => {
-    if (confirm('Are you sure you want to delete all files? This action cannot be undone.')) {
-      try {
-        setIsLoading(true);
-        await dataRoomDB.clearAll();
-        onFilesChange([]);
-        await loadDatabaseStats();
-      } catch (error) {
-        console.error('Failed to clear database:', error);
-        alert('Failed to clear database');
-      } finally {
-        setIsLoading(false);
-      }
+  const retryBackendSync = async (fileId: string) => {
+    console.log(`🔄 FilesView: Retrying backend sync for file: ${fileId}`);
+    const file = files.find(f => f.id === fileId);
+    
+    if (!file) {
+      console.error(`❌ FilesView: File not found for retry sync: ${fileId}`);
+      return;
     }
-  };
+    
+    if (connectionStatus !== 'online') {
+      console.log(`📴 FilesView: Cannot retry sync - not online`);
+      return;
+    }
 
-  const exportData = async () => {
     try {
-      const allFiles = await dataRoomDB.exportData();
-      const dataStr = JSON.stringify(allFiles, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      setIsLoading(true);
+      console.log(`☁️ FilesView: Attempting backend upload for retry...`);
+      const apiResponse = await dataRoomAPI.uploadFile(file.file);
+      console.log(`✅ FilesView: Retry backend upload successful:`, apiResponse);
       
-      const url = URL.createObjectURL(dataBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `dataroom-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Update file with backend info
+      const updates = {
+        id: apiResponse.file_id,
+        backendFileId: apiResponse.file_id,
+        isBackendSynced: true,
+        aiProcessed: true,
+        metadata: {
+          ...file.metadata,
+          backend_file_id: apiResponse.file_id,
+          isBackendSynced: true,
+          aiProcessed: true
+        }
+      };
+      
+      console.log(`🔄 FilesView: Updating file with backend info:`, updates);
+      await dataRoomDB.updateFile(fileId, updates);
+      onFileUpdate(fileId, updates);
+      console.log(`✅ FilesView: Retry sync completed successfully`);
+      
     } catch (error) {
-      console.error('Failed to export data:', error);
-      alert('Failed to export data');
+      console.error('❌ FilesView: Retry sync failed:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const categorizedCount = files.filter(f => f.category && f.category !== 'General').length;
+  const getStatusIcon = (file: UploadedFile) => {
+    if (file.isBackendSynced && file.aiProcessed) {
+      return <Cloud className="h-3 w-3 text-green-500" />;
+    } else if (file.isBackendSynced) {
+      return <Wifi className="h-3 w-3 text-blue-500" />;
+    } else {
+      return <HardDrive className="h-3 w-3 text-orange-500" />;
+    }
+  };
+
+  const categorizedCount = files.filter(f => f.category && f.category !== 'general').length;
   const uncategorizedCount = files.length - categorizedCount;
+  const syncedCount = files.filter(f => f.isBackendSynced).length;
 
   return (
     <div className="space-y-6 p-4">
-      {/* Database Status */}
-      {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Database className="w-5 h-5 text-blue-600" />
-            <span className="font-medium text-blue-900">IndexedDB Storage</span>
-            {isLoading && <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />}
+      {/* Debug Information Panel */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-gray-700">Debug Information</h3>
+          <button 
+            onClick={() => {
+              console.log('📊 CURRENT STATE DUMP:');
+              console.log('Files array:', files);
+              console.log('Connection status:', connectionStatus);
+              console.log('Sync status:', syncStatus);
+              console.log('DB stats:', dbStats);
+              files.forEach((file, index) => {
+                console.log(`File ${index + 1}:`, {
+                  id: file.id,
+                  name: file.name,
+                  category: file.category,
+                  subcategory: file.subcategory,
+                  isBackendSynced: file.isBackendSynced,
+                  backendFileId: file.backendFileId,
+                  aiProcessed: file.aiProcessed,
+                  metadata: file.metadata
+                });
+              });
+            }}
+            className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+          >
+            Dump State to Console
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <span className="font-medium">Connection:</span> {connectionStatus}
           </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={exportData}
-              className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-            >
-              Export Data
-            </button>
-            <button
-              onClick={clearAllFiles}
-              className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
-            >
-              Clear All
-            </button>
+          <div>
+            <span className="font-medium">Sync Status:</span> {syncStatus}
+          </div>
+          <div>
+            <span className="font-medium">Total Files:</span> {files.length}
+          </div>
+          <div>
+            <span className="font-medium">Backend Synced:</span> {syncedCount}
           </div>
         </div>
-        {dbStats && (
-          <div className="mt-2 text-sm text-blue-700">
-            <div className="grid grid-cols-2 gap-4">
-              <div>Total Storage: {formatFileSize(dbStats.totalSize)}</div>
-              <div>Files: {dbStats.totalFiles}</div>
-            </div>
+      </div>
+
+      {/* Connection Status */}
+      <div className={`border rounded-lg p-4 ${
+        connectionStatus === 'online' ? 'bg-green-50 border-green-200' :
+        connectionStatus === 'local-only' ? 'bg-yellow-50 border-yellow-200' :
+        'bg-red-50 border-red-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {connectionStatus === 'online' ? (
+              <Wifi className="w-5 h-5 text-green-600" />
+            ) : (
+              <WifiOff className="w-5 h-5 text-red-600" />
+            )}
+            <span className="font-medium">
+              {connectionStatus === 'online' ? 'Connected to AI Backend' :
+               connectionStatus === 'local-only' ? 'Local Storage Only' :
+               'Offline Mode'}
+            </span>
+            {syncStatus === 'syncing' && <RefreshCw className="w-4 h-4 animate-spin" />}
           </div>
-        )}
-      </div> */}
+          <button
+            onClick={checkConnectionStatus}
+            className="px-3 py-1 text-xs border rounded hover:bg-white/50"
+          >
+            Check Connection
+          </button>
+        </div>
+        <div className="mt-2 text-sm text-gray-600">
+          {connectionStatus === 'online' ? 
+            'Full AI capabilities available including semantic search and document analysis.' :
+            'Limited to local storage. Upload files when connection is restored for AI features.'
+          }
+        </div>
+      </div>
 
       {/* Upload Area */}
       <div>
@@ -493,30 +863,38 @@ const FilesView: React.FC<FilesViewProps> = ({
               </label>
             </div>
             <p className="text-xs text-gray-500">
-              Files are automatically saved to IndexedDB and categorized
+              {connectionStatus === 'online' ? 
+                'Files will be processed by AI and stored locally' :
+                'Files will be stored locally and synced when connection is restored'
+              }
             </p>
           </div>
         </div>
       </div>
 
-      {/* Stats and Info */}
+      {/* Stats */}
       {files.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-4 gap-4 mb-4">
           <div className="bg-white p-3 rounded-lg border shadow-sm">
             <div className="text-lg font-bold text-blue-600">{files.length}</div>
             <div className="text-sm text-gray-600">Total Files</div>
+          </div>
+          <div className="bg-white p-3 rounded-lg border shadow-sm">
+            <div className="text-lg font-bold text-green-600">{syncedCount}</div>
+            <div className="text-sm text-gray-600">AI Processed</div>
           </div>
           <div className="bg-white p-3 rounded-lg border shadow-sm">
             <div className="text-lg font-bold text-green-600">{categorizedCount}</div>
             <div className="text-sm text-gray-600">Categorized</div>
           </div>
           <div className="bg-white p-3 rounded-lg border shadow-sm">
-            <div className="text-lg font-bold text-orange-600">{uncategorizedCount}</div>
-            <div className="text-sm text-gray-600">Uncategorized</div>
+            <div className="text-lg font-bold text-orange-600">{files.length - syncedCount}</div>
+            <div className="text-sm text-gray-600">Pending Sync</div>
           </div>
         </div>
       )}
 
+      {/* Files List */}
       {files.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -531,137 +909,138 @@ const FilesView: React.FC<FilesViewProps> = ({
           
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <ul className="divide-y divide-gray-200">
-              {files.map((file) => (
-                <li key={file.id} className="px-4 py-4 sm:px-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="relative">
-                          <File className="flex-shrink-0 h-8 w-8 text-gray-400" />
-                          <HardDrive 
-                            className="absolute -bottom-1 -right-1 h-3 w-3 text-blue-500" 
-                            aria-label="Stored in IndexedDB"
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {file.name}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {formatFileSize(file.size)} • {file.type}
-                          </p>
-                          {file.category && (
-                            <p className="text-xs text-blue-600 mt-1">
-                              📁 {file.category} → {file.subcategory}
+              {files.map((file, index) => {
+                console.log(`🎨 FilesView: Rendering file ${index + 1}/${files.length}:`, {
+                  id: file.id,
+                  name: file.name,
+                  category: file.category,
+                  isBackendSynced: file.isBackendSynced,
+                  aiProcessed: file.aiProcessed,
+                  metadataKeys: Object.keys(file.metadata || {})
+                });
+
+                return (
+                  <li key={file.id} className="px-4 py-4 sm:px-6">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="relative">
+                            <File className="flex-shrink-0 h-8 w-8 text-gray-400" />
+                            <div className="absolute -bottom-1 -right-1">
+                              {getStatusIcon(file)}
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {file.name}
                             </p>
-                          )}
-                          <p className="text-xs text-gray-400">
-                            Uploaded: {file.uploadDate.toLocaleDateString()} • Stored in IndexedDB
-                          </p>
+                            <p className="text-sm text-gray-500">
+                              {formatFileSize(file.size)} • {file.type}
+                            </p>
+                            {file.category && (
+                              <p className="text-xs text-blue-600 mt-1">
+                                📁 {file.category} → {file.subcategory}
+                              </p>
+                            )}
+                            <div className="flex items-center space-x-2 text-xs text-gray-400 mt-1">
+                              <span>Uploaded: {file.uploadDate.toLocaleDateString()}</span>
+                              {file.isBackendSynced ? (
+                                <span className="text-green-600">• AI Processed</span>
+                              ) : (
+                                <span className="text-orange-600">• Local Only</span>
+                              )}
+                              <button
+                                onClick={() => {
+                                  console.log(`📋 METADATA FOR ${file.name}:`, file.metadata);
+                                  console.log(`📊 FILE DETAILS:`, {
+                                    id: file.id,
+                                    backendFileId: file.backendFileId,
+                                    isBackendSynced: file.isBackendSynced,
+                                    aiProcessed: file.aiProcessed,
+                                    category: file.category,
+                                    subcategory: file.subcategory
+                                  });
+                                }}
+                                className="text-blue-500 hover:text-blue-700 underline"
+                              >
+                                View Metadata
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        {/* <button
-                          onClick={() => startEditingMetadata(file.id, file.metadata)}
-                          className="p-2 text-gray-400 hover:text-blue-600"
-                          title="Edit Metadata"
-                          disabled={isLoading}
-                        >
-                          <Edit3 className="h-5 w-5" />
-                        </button> */}
-                        <button
-                          onClick={() => downloadFile(file)}
-                          className="p-2 text-gray-400 hover:text-green-600"
-                          title="Download from IndexedDB"
-                          disabled={isLoading}
-                        >
-                          <Download className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => removeFile(file.id)}
-                          className="p-2 text-gray-400 hover:text-red-600"
-                          title="Delete from IndexedDB"
-                          disabled={isLoading}
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Category Assignment */}
-                    <div className="flex items-center space-x-2 text-sm">
-                      <Tag className="h-4 w-4 text-gray-400" />
-                      <span className="text-gray-600">Category:</span>
-                      <select
-                        value={file.category || ''}
-                        onChange={(e) => {
-                          const category = e.target.value;
-                          assignToCategory(file.id, category);
-                        }}
-                        disabled={isLoading}
-                        className={`text-xs border rounded px-2 py-1 ${
-                          !file.category || file.category === 'General' 
-                            ? 'border-orange-300 bg-orange-50' 
-                            : 'border-green-300 bg-green-50'
-                        }`}
-                      >
-                        <option value="">Select Category</option>
-                        <option value="Financial">💰 Financial</option>
-                        <option value="Legal">⚖️ Legal</option>
-                        <option value="Customers">👥 Customers</option>
-                        <option value="Corporate">🏢 Corporate</option>
-                        <option value="Operations">⚙️ Operations</option>
-                        <option value="General">📁 General</option>
-                      </select>
-                      
-                      {(!file.category || file.category === 'General') && (
-                        <span className="text-xs text-orange-600">
-                          ⚠️ Assign a category to view in Categories tab
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Metadata Editing */}
-                    {/* {editingMetadata === file.id ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={metadataInput}
-                          onChange={(e) => setMetadataInput(e.target.value)}
-                          className="w-full h-32 text-xs font-mono border rounded p-2"
-                          placeholder="Edit metadata as JSON..."
-                        />
                         <div className="flex space-x-2">
+                          {!file.isBackendSynced && connectionStatus === 'online' && (
+                            <button
+                              onClick={() => retryBackendSync(file.id)}
+                              className="p-2 text-gray-400 hover:text-blue-600"
+                              title="Sync with AI backend"
+                              disabled={isLoading}
+                            >
+                              <RefreshCw className="h-5 w-5" />
+                            </button>
+                          )}
                           <button
-                            onClick={() => saveMetadata(file.id)}
-                            className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                            onClick={() => downloadFile(file)}
+                            className="p-2 text-gray-400 hover:text-green-600"
+                            title="Download file"
                             disabled={isLoading}
                           >
-                            Save to IndexedDB
+                            <Download className="h-5 w-5" />
                           </button>
                           <button
-                            onClick={() => setEditingMetadata(null)}
-                            className="px-3 py-1 bg-gray-300 text-gray-700 text-xs rounded hover:bg-gray-400"
+                            onClick={() => removeFile(file.id)}
+                            className="p-2 text-gray-400 hover:text-red-600"
+                            title="Delete file"
+                            disabled={isLoading}
                           >
-                            Cancel
+                            <Trash2 className="h-5 w-5" />
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      file.metadata && (
-                        <div className="bg-gray-50 p-2 rounded text-xs">
-                          <div className="text-gray-600 font-medium mb-1">
-                            Metadata Preview (Stored in IndexedDB):
-                          </div>
-                          <div className="text-gray-800 font-mono">
-                            {JSON.stringify(file.metadata, null, 2).substring(0, 200)}
-                            {JSON.stringify(file.metadata).length > 200 && '...'}
-                          </div>
-                        </div>
-                      )
-                    )} */}
-                  </div>
-                </li>
-              ))}
+
+                      {/* Category Assignment */}
+                      <div className="flex items-center space-x-2 text-sm">
+                        <Tag className="h-4 w-4 text-gray-400" />
+                        <span className="text-gray-600">Category:</span>
+                        <select
+                          value={file.category || ''}
+                          onChange={(e) => {
+                            const category = e.target.value;
+                            console.log(`🏷️ FilesView: Category change requested:`, {
+                              fileId: file.id,
+                              fileName: file.name,
+                              oldCategory: file.category,
+                              newCategory: category
+                            });
+                            assignToCategory(file.id, category);
+                          }}
+                          disabled={isLoading}
+                          className={`text-xs border rounded px-2 py-1 ${
+                            !file.category || file.category === 'general' 
+                              ? 'border-orange-300 bg-orange-50' 
+                              : 'border-green-300 bg-green-50'
+                          }`}
+                        >
+                          <option value="">Select Category</option>
+                          <option value="financial">💰 Financial</option>
+                          <option value="sales">📊 Sales</option>
+                          <option value="inventory">📦 Inventory</option>
+                          <option value="hr">👥 HR</option>
+                          <option value="marketing">📢 Marketing</option>
+                          <option value="legal">⚖️ Legal</option>
+                          <option value="general">📁 General</option>
+                        </select>
+                        
+                        {(!file.category || file.category === 'general') && (
+                          <span className="text-xs text-orange-600">
+                            ⚠️ Assign a category to view in Categories tab
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </div>
@@ -671,7 +1050,9 @@ const FilesView: React.FC<FilesViewProps> = ({
       {isLoading && (
         <div className="text-center py-4">
           <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600" />
-          <p className="text-sm text-gray-600 mt-2">Processing files with IndexedDB...</p>
+          <p className="text-sm text-gray-600 mt-2">
+            {connectionStatus === 'online' ? 'Processing files with AI...' : 'Processing files locally...'}
+          </p>
         </div>
       )}
     </div>

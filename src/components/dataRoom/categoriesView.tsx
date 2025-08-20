@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar, DollarSign, Users, Percent, Eye, EyeOff, Upload } from 'lucide-react';
-import { UploadedFile } from '../dataRoom/filesView';
+import { ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar, DollarSign, Users, Percent, Eye, EyeOff, Upload, Cloud, HardDrive } from 'lucide-react';
+import { UploadedFile } from './filesView';
 
 interface CategoryStructure {
   [category: string]: {
@@ -326,6 +326,16 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
 
   const filteredCategorizedFiles = filterCategories(categorizedFiles, searchQuery);
 
+  const getFileStatusIcon = (file: UploadedFile) => {
+    if (file.isBackendSynced && file.aiProcessed) {
+      return <Cloud className="h-3 w-3 text-green-500" />;
+    } else if (file.isBackendSynced) {
+      return <Cloud className="h-3 w-3 text-blue-500" />;
+    } else {
+      return <HardDrive className="h-3 w-3 text-orange-500" />;
+    }
+  };
+
   if (files.length === 0) {
     return (
       <div className="text-center py-12">
@@ -338,13 +348,17 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
     );
   }
 
+  const syncedCount = files.filter(f => f.isBackendSynced).length;
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header with Search */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Uploaded Files by Categories</h2>
-          <p className="text-gray-600 mt-1">Browse and explore your uploaded documents organized by category</p>
+          <h2 className="text-2xl font-bold text-gray-900">Files by Categories</h2>
+          <p className="text-gray-600 mt-1">
+            Browse and explore your documents organized by category
+          </p>
         </div>
         <div className="relative w-80">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -367,7 +381,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-lg border shadow-sm">
           <div className="text-2xl font-bold text-blue-600">{Object.keys(categorizedFiles).length}</div>
           <div className="text-gray-600">Categories</div>
@@ -383,6 +397,12 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
             {files.length}
           </div>
           <div className="text-gray-600">Total Files</div>
+        </div>
+        <div className="bg-white p-4 rounded-lg border shadow-sm">
+          <div className="text-2xl font-bold text-green-600">
+            {syncedCount}
+          </div>
+          <div className="text-gray-600">AI Processed</div>
         </div>
       </div>
 
@@ -401,7 +421,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                 <ChevronRight className="w-5 h-5 mr-2 text-gray-600" />
               )}
               <Folder className="w-5 h-5 mr-2 text-blue-500" />
-              <span className="text-gray-900">{category}</span>
+              <span className="text-gray-900 capitalize">{category}</span>
               <span className="ml-auto text-sm text-gray-500">
                 {Object.keys(subcategories).length} subcategories
               </span>
@@ -432,14 +452,22 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                       {/* Files */}
                       {expandedSubcategories[`${category}-${subcategory}`] && (
                         <div className="px-4 pb-4 space-y-3">
-                          {subcategoryFiles.map((file, index) => (
+                          {subcategoryFiles.map((file) => (
                             <div key={file.id} className="bg-gray-50 p-4 rounded-lg border">
                               <div className="flex items-center mb-3">
-                                <File className="w-4 h-4 mr-2 text-gray-500" />
+                                <div className="relative mr-2">
+                                  <File className="w-4 h-4 text-gray-500" />
+                                  <div className="absolute -bottom-1 -right-1">
+                                    {getFileStatusIcon(file)}
+                                  </div>
+                                </div>
                                 <div className="flex-1">
                                   <div className="font-medium text-gray-900">{file.name}</div>
                                   <div className="text-sm text-gray-500">
                                     {formatFileSize(file.size)} • {file.type} • Uploaded {file.uploadDate.toLocaleDateString()}
+                                  </div>
+                                  <div className="text-xs text-gray-400 mt-1">
+                                    {file.isBackendSynced ? 'AI Processed & Searchable' : 'Local Storage Only'}
                                   </div>
                                 </div>
                               </div>
