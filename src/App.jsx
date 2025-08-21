@@ -11,7 +11,7 @@ import SignUp from "./pages/signup";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Navbar from "./components/Navbar";
 import DataRoom from "./pages/dataRoom";
-import DocumentResponse from "./components/documentResponse";
+// import DocumentResponse from "./components/documentResponse";
 
 // Layout component for authenticated routes
 const Layout = () => {
@@ -62,7 +62,7 @@ function AppContent() {
         {/* Protected Routes */}
         <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} />}>
           <Route element={<Layout />}>
-            <Route path="/chatbot" element={<DocumentResponse />} />
+            {/* <Route path="/chatbot" element={<DocumentResponse />} /> */}
             <Route path="/" element={<DataRoom />} />
           </Route>
         </Route>

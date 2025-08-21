@@ -243,21 +243,21 @@ class DataRoomAPIService {
     return this.isConnected;
   }
 
-  getSubcategoryFromCategory(category: string): string {
-    const categoryMap: Record<string, string> = {
-      financial: 'Financial Statements',
-      sales: 'Sales Data',
-      inventory: 'Inventory Management',
-      hr: 'HR Documents',
-      marketing: 'Marketing Materials',
-      legal: 'Legal Documents',
-      operations: 'Operational Data'
-    };
+  // getSubcategoryFromCategory(category: string): string {
+  //   const categoryMap: Record<string, string> = {
+  //     financial: 'Financial Statements',
+  //     sales: 'Sales Data',
+  //     inventory: 'Inventory Management',
+  //     hr: 'HR Documents',
+  //     marketing: 'Marketing Materials',
+  //     legal: 'Legal Documents',
+  //     operations: 'Operational Data'
+  //   };
 
-    const subcategory = categoryMap[category.toLowerCase()] || 'General';
-    this.log('Mapping category to subcategory', { category, subcategory });
-    return subcategory;
-  }
+  //   const subcategory = categoryMap[category.toLowerCase()] || 'General';
+  //   this.log('Mapping category to subcategory', { category, subcategory });
+  //   return subcategory;
+  // }
 }
 
 export const dataRoomAPI = new DataRoomAPIService();
