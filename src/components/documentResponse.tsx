@@ -16,70 +16,58 @@ import {
   Quote,
   ChevronDown,
   ChevronRight,
-  Wifi,
-  WifiOff,
   AlertTriangle,
   Clock
 } from 'lucide-react'
 import { dataRoomAPI, APIQuestionResponse } from '../service/api'
-import { dataRoomDB } from '@/services/indexedDb'
 
-// Enhanced response interface for document-aware responses
 interface DocumentResponse {
   answer: string
-  documentName?: string
-  pageNumber?: number
-  context: string
-  confidence: number
-  sourceType: 'document' | 'metadata' | 'general'
-  relatedDocuments?: Array<{
-    name: string
-    id: string
-    relevance: number
-  }>
   sources?: Array<{
     file_id: string
     file_name: string
     download_url: string
     category: string
+    chunk_point_id: string
+  }>
+  context?: Array<{
+    id: string
+    text: string
+    category: string
+    source_file: string
+    row_number: number
+    sheet_name?: string
+    score: number
   }>
   category?: string
   timestamp?: string
-  contextDetails?: Array<{
-    text: string
-    row_number?: number
-    score?: number
-  }>
 }
 
-interface EnhancedMessage {
+interface ChatMessage {
   id: number
   type: 'user' | 'bot'
   content: string
   timestamp: Date
+  documentResponse?: DocumentResponse
+  isError?: boolean
   quickReplies?: Array<{
     id: string
     text: string
     action: string
   }>
-  documentResponse?: DocumentResponse
-  isQuickReply?: boolean
-  isFromAPI?: boolean
 }
 
-type ConnectionStatus = 'online' | 'offline' | 'local-only';
-
-const DocumentAwareChatBot = () => {
-  const [messages, setMessages] = useState<EnhancedMessage[]>([
+const DocumentChatBot = () => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 1,
       type: 'bot',
       content: 'Hello! I\'m your AI assistant with access to your DataRoom documents. I can answer questions about your uploaded files, analyze financial data, and help you find specific information across all your documents. What would you like to know?',
       timestamp: new Date(),
       quickReplies: [
-        { id: 'help', text: 'What can you do?', action: 'help' },
-        { id: 'documents', text: 'Show my documents', action: 'list_documents' },
-        { id: 'financial', text: 'Financial summary', action: 'financial_summary' }
+        { id: 'example1', text: 'What\'s in my documents?', action: 'list_files' },
+        { id: 'example2', text: 'Financial summary', action: 'financial_summary' },
+        { id: 'example3', text: 'Show me revenue data', action: 'revenue_query' }
       ]
     }
   ])
@@ -87,7 +75,6 @@ const DocumentAwareChatBot = () => {
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [expandedResponses, setExpandedResponses] = useState<Record<number, boolean>>({})
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('offline')
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -98,32 +85,6 @@ const DocumentAwareChatBot = () => {
     scrollToBottom()
   }, [messages])
 
-  useEffect(() => {
-    checkConnectionStatus()
-    const interval = setInterval(checkConnectionStatus, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const checkConnectionStatus = async () => {
-    const isOnline = navigator.onLine
-    
-    if (!isOnline) {
-      setConnectionStatus('offline')
-      return
-    }
-    
-    try {
-      const isBackendHealthy = await dataRoomAPI.checkHealth()
-      if (isBackendHealthy) {
-        setConnectionStatus('online')
-      } else {
-        setConnectionStatus('local-only')
-      }
-    } catch {
-      setConnectionStatus('local-only')
-    }
-  }
-
   const formatTime = (timestamp: Date) => {
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
@@ -131,99 +92,27 @@ const DocumentAwareChatBot = () => {
     }).format(timestamp)
   }
 
-  // Enhanced function with real API integration
-  const getDocumentAwareResponse = async (query: string): Promise<DocumentResponse> => {
-    if (connectionStatus === 'online') {
-      try {
-        const apiResponse: APIQuestionResponse = await dataRoomAPI.askQuestion(query)
-        
-        return {
-          answer: apiResponse.answer,
-          documentName: apiResponse.sources[0]?.file_name,
-          pageNumber: apiResponse.context[0]?.row_number,
-          context: apiResponse.context.map(c => c.text).join(' '),
-          confidence: apiResponse.context[0]?.score || 0,
-          sourceType: 'document',
-          sources: apiResponse.sources,
-          relatedDocuments: apiResponse.sources.slice(1).map(s => ({
-            name: s.file_name,
-            id: s.file_id,
-            relevance: 0.8
-          })),
-          // Enhanced API response details
-          category: apiResponse.category,
-          timestamp: apiResponse.timestamp,
-          contextDetails: apiResponse.context
-        }
-      } catch (apiError) {
-        console.error('API request failed, falling back to local search:', apiError)
-        return getFallbackResponse(query)
-      }
-    } else {
-      return getFallbackResponse(query)
-    }
-  }
-
-  const getFallbackResponse = async (query: string): Promise<DocumentResponse> => {
+  const askQuestion = async (query: string): Promise<DocumentResponse | null> => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate processing time
-      
-      // Use IndexedDB search when backend is unavailable
-      const searchResults = await dataRoomDB.searchFiles(query)
-      
-      if (searchResults.length > 0) {
-        const firstResult = searchResults[0]
-        const contextText = JSON.stringify(firstResult.metadata)
-        
-        return {
-          answer: `Found information in ${firstResult.name}. Note: This is offline mode with limited AI capabilities. For full semantic search and analysis, please ensure backend connection is available.`,
-          documentName: firstResult.name,
-          context: contextText.substring(0, 300) + (contextText.length > 300 ? '...' : ''),
-          confidence: 0.6,
-          sourceType: 'metadata'
-        }
-      }
-      
-      // Mock responses for common queries when no local data found
-      if (query.toLowerCase().includes('profit') || query.toLowerCase().includes('revenue')) {
-        return {
-          answer: "I don't have access to real-time financial data. Please upload financial documents or connect to the AI backend for detailed analysis.",
-          context: "No financial documents found in local storage.",
-          confidence: 0.3,
-          sourceType: 'general'
-        }
-      }
-      
-      if (query.toLowerCase().includes('customer') || query.toLowerCase().includes('client')) {
-        return {
-          answer: "I don't have access to customer data. Please upload customer-related documents or ensure backend connectivity for comprehensive analysis.",
-          context: "No customer documents found in local storage.",
-          confidence: 0.3,
-          sourceType: 'general'
-        }
-      }
+      const apiResponse: APIQuestionResponse = await dataRoomAPI.askQuestion(query)
       
       return {
-        answer: "I couldn't find relevant information in your local documents. For the best experience, please ensure you have uploaded relevant documents and that the AI backend is connected.",
-        context: "Operating in offline mode with basic search capabilities.",
-        confidence: 0.2,
-        sourceType: 'general'
+        answer: apiResponse.answer,
+        sources: apiResponse.sources,
+        context: apiResponse.context,
+        category: apiResponse.category,
+        timestamp: apiResponse.timestamp
       }
     } catch (error) {
-      console.error('Fallback search failed:', error)
-      return {
-        answer: "I'm sorry, I encountered an error while searching your documents. Please try again or check your connection.",
-        context: "Search operation failed.",
-        confidence: 0.1,
-        sourceType: 'general'
-      }
+      console.error('API request failed:', error)
+      throw error
     }
   }
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
-    const userMessage: EnhancedMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now(),
       type: 'user',
       content: inputValue.trim(),
@@ -236,54 +125,65 @@ const DocumentAwareChatBot = () => {
     setIsTyping(true)
 
     try {
-      const documentResponse = await getDocumentAwareResponse(currentMessage)
+      const documentResponse = await askQuestion(currentMessage)
       
-      const botMessage: EnhancedMessage = {
+      const botMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'bot',
-        content: documentResponse.answer,
+        content: documentResponse?.answer || 'I received an empty response.',
         timestamp: new Date(),
-        documentResponse,
-        quickReplies: generateQuickReplies(documentResponse),
-        isFromAPI: connectionStatus === 'online'
+        documentResponse: documentResponse || undefined,
+        quickReplies: generateQuickReplies(documentResponse)
       }
       
       setMessages(prev => [...prev, botMessage])
     } catch (error) {
       console.error('Error getting AI response:', error)
-      const errorMessage: EnhancedMessage = {
+      
+      let errorMessage = 'I encountered an error while processing your question.'
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Backend service is unavailable')) {
+          errorMessage = 'The AI service is currently unavailable. Please check your connection and try again.'
+        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Unable to connect to the AI service. Please check your internet connection.'
+        } else {
+          errorMessage = `Error: ${error.message}`
+        }
+      }
+
+      const errorBotMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'bot',
-        content: 'Sorry, I encountered an error while searching through your documents. Please try again.',
+        content: errorMessage,
         timestamp: new Date(),
+        isError: true,
         quickReplies: [
           { id: 'retry', text: 'Try again', action: 'retry' },
           { id: 'help', text: 'Get help', action: 'help' }
         ]
       }
-      setMessages(prev => [...prev, errorMessage])
+      setMessages(prev => [...prev, errorBotMessage])
     }
     
     setIsTyping(false)
   }
 
-  const generateQuickReplies = (response: DocumentResponse) => {
+  const generateQuickReplies = (response: DocumentResponse | null) => {
+    if (!response) return []
+
     const replies = []
 
-    if (response.documentName) {
-      replies.push({ id: 'open_doc', text: 'Open document', action: 'open_document' })
+    if (response.sources && response.sources.length > 0) {
+      replies.push({ id: 'sources', text: 'Show sources', action: 'show_sources' })
     }
 
-    if (response.relatedDocuments && response.relatedDocuments.length > 0) {
-      replies.push({ id: 'related', text: 'Show related docs', action: 'show_related' })
+    if (response.context && response.context.length > 0) {
+      replies.push({ id: 'context', text: 'More details', action: 'show_context' })
     }
 
-    if (response.sourceType === 'document') {
-      replies.push({ id: 'more_detail', text: 'More details', action: 'more_details' })
-    }
-
-    if (connectionStatus !== 'online') {
-      replies.push({ id: 'connect', text: 'Connect to AI', action: 'check_connection' })
+    if (response.category) {
+      replies.push({ id: 'category', text: `More about ${response.category}`, action: 'category_query' })
     }
 
     replies.push({ id: 'continue', text: 'Ask another question', action: 'continue' })
@@ -292,12 +192,11 @@ const DocumentAwareChatBot = () => {
   }
 
   const handleQuickReply = async (action: string, text: string) => {
-    const userMessage: EnhancedMessage = {
+    const userMessage: ChatMessage = {
       id: Date.now(),
       type: 'user',
       content: text,
-      timestamp: new Date(),
-      isQuickReply: true
+      timestamp: new Date()
     }
 
     setMessages(prev => [...prev, userMessage])
@@ -309,71 +208,47 @@ const DocumentAwareChatBot = () => {
 
       switch (action) {
         case 'help':
-          botResponse = `I can help you:\n\n• Answer questions about your uploaded documents\n• Analyze financial data and metrics\n• Find specific information across all files\n• Compare data between different documents\n• Summarize key insights from your data\n\n${
-            connectionStatus === 'online' 
-              ? 'AI backend is connected - full capabilities available!'
-              : 'Currently in offline mode - limited to basic search. Connect to backend for AI analysis.'
-          }`
+          botResponse = `I can help you with:\n\n• Answering questions about your uploaded documents\n• Analyzing financial data and trends\n• Finding specific information across all files\n• Comparing data between different documents\n• Summarizing key insights from your data\n\nTry asking specific questions like:\n• "What was our revenue last quarter?"\n• "Show me customer data"\n• "Summarize financial performance"`
           quickReplies = [
-            { id: 'example1', text: 'Revenue analysis', action: 'revenue_example' },
-            { id: 'example2', text: 'Customer metrics', action: 'customer_example' },
-            { id: 'documents', text: 'List documents', action: 'list_documents' }
+            { id: 'example1', text: 'Revenue analysis', action: 'revenue_query' },
+            { id: 'example2', text: 'Customer data', action: 'customer_query' },
+            { id: 'example3', text: 'Document summary', action: 'summary_query' }
           ]
           break
 
-        case 'list_documents':
-          try {
-            const files = await dataRoomDB.getAllFiles()
-            if (files.length > 0) {
-              const fileList = files.map(f => `• ${f.name} (${f.category || 'Uncategorized'})`).join('\n')
-              botResponse = `Here are your uploaded documents:\n\n${fileList}\n\nYou can ask me questions about any of these files.`
-              quickReplies = [
-                { id: 'analyze', text: 'Analyze all', action: 'analyze_all' },
-                { id: 'financial', text: 'Financial summary', action: 'financial_summary' }
-              ]
-            } else {
-              botResponse = "No documents found in your DataRoom. Please upload some files first to get started."
-              quickReplies = [{ id: 'help', text: 'Get help', action: 'help' }]
-            }
-          } catch (error) {
-            botResponse = "I couldn't retrieve your documents. Please make sure some files are uploaded to the DataRoom."
-            quickReplies = [{ id: 'help', text: 'Get help', action: 'help' }]
-          }
-          break
-
-        case 'check_connection':
-          await checkConnectionStatus()
-          botResponse = connectionStatus === 'online' 
-            ? "Connection restored! AI backend is now available with full semantic search capabilities."
-            : "Still unable to connect to AI backend. Operating in offline mode with basic search functionality."
-          quickReplies = [
-            { id: 'help', text: 'What can you do?', action: 'help' },
-            { id: 'documents', text: 'Show documents', action: 'list_documents' }
-          ]
+        case 'list_files':
+          botResponse = "Let me check what documents you have uploaded..."
+          // This would trigger a real API call to list files
           break
 
         case 'financial_summary':
-          if (connectionStatus === 'online') {
-            botResponse = "Let me analyze your financial documents using AI..."
-            // This would trigger a real API call in practice
-          } else {
-            botResponse = "Basic financial summary from local data:\n\n• Files uploaded to DataRoom\n• Categories identified\n• For detailed AI analysis, please connect to backend\n\nUpload financial documents and connect to AI for comprehensive analysis."
-          }
+          botResponse = "Analyzing your financial documents..."
+          // This would trigger a specific financial query
+          break
+
+        case 'revenue_query':
+          botResponse = "What specific revenue information would you like to know? For example:\n• Total revenue for a specific period\n• Revenue by product or category\n• Revenue trends over time"
           quickReplies = [
-            { id: 'revenue_detail', text: 'Revenue breakdown', action: 'revenue_breakdown' },
-            { id: 'customer_detail', text: 'Customer analysis', action: 'customer_analysis' }
+            { id: 'total_revenue', text: 'Total revenue', action: 'total_revenue' },
+            { id: 'revenue_trends', text: 'Revenue trends', action: 'revenue_trends' }
+          ]
+          break
+
+        case 'retry':
+          botResponse = "Please try asking your question again. I'm ready to help!"
+          quickReplies = [
+            { id: 'help', text: 'What can you do?', action: 'help' }
           ]
           break
 
         default:
-          botResponse = "Thanks for your interest! Feel free to ask me any questions about your documents."
+          botResponse = "I'm ready to answer questions about your documents. What would you like to know?"
           quickReplies = [
-            { id: 'help', text: 'What can you do?', action: 'help' },
-            { id: 'documents', text: 'Show documents', action: 'list_documents' }
+            { id: 'help', text: 'What can you do?', action: 'help' }
           ]
       }
 
-      const botMessage: EnhancedMessage = {
+      const botMessage: ChatMessage = {
         id: Date.now() + 1,
         type: 'bot',
         content: botResponse,
@@ -403,7 +278,7 @@ const DocumentAwareChatBot = () => {
     }
   }
 
-  const renderDocumentResponse = (message: EnhancedMessage) => {
+  const renderDocumentResponse = (message: ChatMessage) => {
     if (!message.documentResponse) return null
 
     const { documentResponse } = message
@@ -415,12 +290,10 @@ const DocumentAwareChatBot = () => {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center gap-2">
               <Database className="h-4 w-4 text-blue-600" />
-              Document Source
-              {message.isFromAPI && (
-                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
-                  AI Processed
-                </Badge>
-              )}
+              Document Sources
+              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                AI Processed
+              </Badge>
             </CardTitle>
             <Button
               variant="ghost"
@@ -435,26 +308,7 @@ const DocumentAwareChatBot = () => {
         
         {isExpanded && (
           <CardContent className="pt-0 space-y-3">
-            {/* Source Information */}
-            {documentResponse.documentName && (
-              <div className="flex items-center gap-2 text-sm">
-                <FileText className="h-4 w-4 text-blue-600" />
-                <span className="font-medium">{documentResponse.documentName}</span>
-                {documentResponse.pageNumber && (
-                  <Badge variant="secondary" className="text-xs">
-                    Row {documentResponse.pageNumber}
-                  </Badge>
-                )}
-                {documentResponse.sources && documentResponse.sources[0] && (
-                  <Button variant="ghost" size="sm" className="h-6 px-2 ml-auto">
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Open
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {/* API Response Details */}
+            {/* Category Information */}
             {documentResponse.category && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-gray-600">Category:</span>
@@ -464,6 +318,7 @@ const DocumentAwareChatBot = () => {
               </div>
             )}
 
+            {/* Timestamp */}
             {documentResponse.timestamp && (
               <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-gray-500" />
@@ -474,20 +329,53 @@ const DocumentAwareChatBot = () => {
               </div>
             )}
 
+            {/* Sources */}
+            {documentResponse.sources && documentResponse.sources.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">Source Documents</span>
+                {documentResponse.sources.map((source, index) => (
+                  <div key={index} className="bg-white p-3 rounded border">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium text-sm">{source.file_name}</span>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-6 px-2">
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Open
+                      </Button>
+                    </div>
+                    {source.category && (
+                      <Badge variant="outline" className="text-xs">
+                        {source.category}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Context Details */}
-            {documentResponse.contextDetails && documentResponse.contextDetails.length > 0 && (
+            {documentResponse.context && documentResponse.context.length > 0 && (
               <div className="space-y-2">
                 <span className="text-sm font-medium text-gray-700">Context Matches</span>
-                {documentResponse.contextDetails.map((contextItem, index) => (
+                {documentResponse.context.slice(0, 3).map((contextItem, index) => (
                   <div key={index} className="bg-white p-3 rounded border">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <Quote className="h-4 w-4 text-gray-500 flex-shrink-0" />
-                        {contextItem.row_number && (
-                          <Badge variant="outline" className="text-xs">
-                            Row {contextItem.row_number}
-                          </Badge>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {contextItem.row_number && (
+                            <Badge variant="outline" className="text-xs">
+                              Row {contextItem.row_number}
+                            </Badge>
+                          )}
+                          {contextItem.sheet_name && (
+                            <Badge variant="outline" className="text-xs">
+                              {contextItem.sheet_name}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       {contextItem.score && (
                         <Badge variant="secondary" className="text-xs">
@@ -500,89 +388,23 @@ const DocumentAwareChatBot = () => {
                         ? `${contextItem.text.substring(0, 200)}...`
                         : contextItem.text}
                     </p>
+                    <div className="mt-2 text-xs text-gray-500">
+                      From: {contextItem.source_file}
+                    </div>
                   </div>
                 ))}
+                {documentResponse.context.length > 3 && (
+                  <div className="text-xs text-gray-500 text-center">
+                    ... and {documentResponse.context.length - 3} more context matches
+                  </div>
+                )}
               </div>
             )}
-
-            {/* Fallback Context for non-detailed responses */}
-            {(!documentResponse.contextDetails || documentResponse.contextDetails.length === 0) && documentResponse.context && (
-              <div className="bg-white p-3 rounded border">
-                <div className="flex items-start gap-2 mb-2">
-                  <Quote className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-sm font-medium text-gray-700">Context</span>
-                </div>
-                <p className="text-sm text-gray-600 leading-relaxed pl-6">
-                  {documentResponse.context}
-                </p>
-              </div>
-            )}
-
-            {/* Related Documents */}
-            {documentResponse.relatedDocuments && documentResponse.relatedDocuments.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Related Documents</h4>
-                <div className="space-y-2">
-                  {documentResponse.relatedDocuments.map((doc, index) => (
-                    <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-3 w-3 text-gray-500" />
-                        <span className="text-sm">{doc.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {(doc.relevance * 100).toFixed(0)}% match
-                        </Badge>
-                        <Button variant="ghost" size="sm" className="h-6 px-2">
-                          <ExternalLink className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Source Type Badge */}
-            <div className="flex justify-end">
-              <Badge variant={
-                documentResponse.sourceType === 'document' ? 'default' :
-                documentResponse.sourceType === 'metadata' ? 'secondary' : 'outline'
-              } className="text-xs">
-                {documentResponse.sourceType === 'document' ? 'Document Content' :
-                 documentResponse.sourceType === 'metadata' ? 'Document Metadata' : 'General Knowledge'}
-              </Badge>
-            </div>
           </CardContent>
         )}
       </Card>
     )
   }
-
-  const getConnectionStatusDisplay = () => {
-    switch (connectionStatus) {
-      case 'online':
-        return {
-          icon: <Wifi className="w-2 h-2" />,
-          color: 'bg-green-500',
-          text: 'AI Connected'
-        }
-      case 'local-only':
-        return {
-          icon: <AlertTriangle className="w-2 h-2" />,
-          color: 'bg-yellow-500',
-          text: 'Local Only'
-        }
-      default:
-        return {
-          icon: <WifiOff className="w-2 h-2" />,
-          color: 'bg-red-500',
-          text: 'Offline'
-        }
-    }
-  }
-
-  const statusDisplay = getConnectionStatusDisplay()
 
   return (
     <div className="flex flex-col h-screen w-full bg-background">
@@ -602,10 +424,6 @@ const DocumentAwareChatBot = () => {
               </p>
             </div>
           </div>
-          <Badge variant="secondary" className="flex-shrink-0 text-xs">
-            <div className={`w-2 h-2 rounded-full mr-1.5 ${statusDisplay.color}`}></div>
-            {statusDisplay.text}
-          </Badge>
         </div>
       </div>
 
@@ -617,8 +435,8 @@ const DocumentAwareChatBot = () => {
               <div className={`flex gap-2 md:gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {message.type === 'bot' && (
                   <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
-                    <AvatarFallback className="bg-blue-500 text-white">
-                      <Bot className="h-3 w-3 md:h-4 md:w-4" />
+                    <AvatarFallback className={`text-white ${message.isError ? 'bg-red-500' : 'bg-blue-500'}`}>
+                      {message.isError ? <AlertTriangle className="h-3 w-3 md:h-4 md:w-4" /> : <Bot className="h-3 w-3 md:h-4 md:w-4" />}
                     </AvatarFallback>
                   </Avatar>
                 )}
@@ -627,12 +445,16 @@ const DocumentAwareChatBot = () => {
                   <div className={`rounded-2xl px-3 py-2 md:px-4 md:py-3 ${
                     message.type === 'user' 
                       ? 'bg-blue-500 text-white ml-auto' 
+                      : message.isError
+                      ? 'bg-red-50 border border-red-200'
                       : 'bg-muted'
-                  } ${message.isQuickReply ? 'ring-2 ring-blue-200' : ''}`}>
+                  }`}>
                     <p className="text-xs md:text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-muted-foreground">{formatTime(message.timestamp)}</span>
-                      {message.isFromAPI && (
+                      <span className={`text-xs ${message.type === 'user' ? 'text-blue-100' : 'text-muted-foreground'}`}>
+                        {formatTime(message.timestamp)}
+                      </span>
+                      {message.documentResponse && (
                         <Badge variant="outline" className="text-xs">AI</Badge>
                       )}
                     </div>
@@ -682,7 +504,7 @@ const DocumentAwareChatBot = () => {
                 <div className="flex items-center space-x-2">
                   <Loader2 className="h-3 w-3 md:h-4 md:w-4 animate-spin" />
                   <span className="text-xs md:text-sm text-muted-foreground">
-                    {connectionStatus === 'online' ? 'AI is analyzing documents...' : 'Searching locally...'}
+                    AI is analyzing your documents...
                   </span>
                 </div>
               </div>
@@ -702,11 +524,7 @@ const DocumentAwareChatBot = () => {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={
-                  connectionStatus === 'online' 
-                    ? "Ask about your documents... (e.g., 'What was our profit this year?')"
-                    : "Ask about your documents... (offline mode - limited capabilities)"
-                }
+                placeholder="Ask about your documents... (e.g., 'What was our profit this year?')"
                 className="h-9"
                 disabled={isTyping}
               />
@@ -729,4 +547,4 @@ const DocumentAwareChatBot = () => {
   )
 }
 
-export default DocumentAwareChatBot
+export default DocumentChatBot

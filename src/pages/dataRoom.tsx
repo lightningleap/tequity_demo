@@ -1,64 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import FilesView, { UploadedFile } from '../components/dataRoom/filesView';
-import CategoriesView from '../components/dataRoom/categoriesView';
-// import DocumentAwareChatBot from '../components/dataRoom';
+import CategoriesView from '../components/dataRoom/categoriesView'; // Import the component
 import { dataRoomAPI } from '../service/api';
-import { Database, FileText, MessageSquare, BarChart3, RefreshCw, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
-import DocumentAwareChatBot from '@/components/documentResponse';
+import { FileText, MessageSquare, Database, RefreshCw } from 'lucide-react';
+import DocumentChatBot from '@/components/documentResponse';
 
-type ConnectionStatus = 'online' | 'offline' | 'local-only';
-
-const EnhancedDataRoom: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'files' | 'categories' | 'chat' | 'analytics'>('files');
+const DataRoom: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'files' | 'categories' | 'chat'>('files');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [dbStats, setDbStats] = useState<any>(null);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('offline');
-
-  // Monitor online/offline status
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      checkConnectionStatus();
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setConnectionStatus('offline');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Initial connection check
-    checkConnectionStatus();
-
-    // Periodic connection checks
-    const interval = setInterval(checkConnectionStatus, 30000);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      clearInterval(interval);
-    };
-  }, []);
-
-  const checkConnectionStatus = async () => {
-    if (!navigator.onLine) {
-      setConnectionStatus('offline');
-      return;
-    }
-
-    try {
-      const isBackendHealthy = await dataRoomAPI.checkHealth();
-      if (isBackendHealthy) {
-        setConnectionStatus('online');
-      } else {
-        setConnectionStatus('local-only');
-      }
-    } catch {
-      setConnectionStatus('local-only');
-    }
-  };
 
   const handleFilesChange = (newFiles: UploadedFile[]) => {
     setUploadedFiles(newFiles);
@@ -72,247 +21,149 @@ const EnhancedDataRoom: React.FC = () => {
     );
   };
 
-  const handleDatabaseStats = (stats: any) => {
-    setDbStats(stats);
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // const getConnectionStatusDisplay = () => {
-  //   switch (connectionStatus) {
-  //     case 'online':
-  //       return {
-  //         icon: <Wifi className="w-4 h-4" />,
-  //         color: 'text-green-600',
-  //         bgColor: 'bg-green-50',
-  //         borderColor: 'border-green-200',
-  //         text: 'AI Backend Connected',
-  //         description: 'Full functionality available including semantic search and document analysis'
-  //       };
-  //     case 'local-only':
-  //       return {
-  //         icon: <AlertTriangle className="w-4 h-4" />,
-  //         color: 'text-yellow-600',
-  //         bgColor: 'bg-yellow-50',
-  //         borderColor: 'border-yellow-200',
-  //         text: 'Local Storage Only',
-  //         description: 'Backend unavailable. Files stored locally with basic search capabilities'
-  //       };
-  //     default:
-  //       return {
-  //         icon: <WifiOff className="w-4 h-4" />,
-  //         color: 'text-red-600',
-  //         bgColor: 'bg-red-50',
-  //         borderColor: 'border-red-200',
-  //         text: 'Offline Mode',
-  //         description: 'No internet connection. Operating with local storage only'
-  //       };
-  //   }
-  // };
-
-  // const connectionDisplay = getConnectionStatusDisplay();
-  const syncedCount = uploadedFiles.filter(f => f.isBackendSynced).length;
+  const aiProcessedCount = uploadedFiles.filter(f => f.aiProcessed).length;
   const categorizedCount = uploadedFiles.filter(f => f.category && f.category !== 'general').length;
 
-  // const AnalyticsView: React.FC = () => {
-  //   if (!dbStats) {
-  //     return (
-  //       <div className="p-6 text-center">
-  //         <RefreshCw className="w-8 h-8 animate-spin mx-auto text-gray-400" />
-  //         <p className="mt-2 text-gray-600">Loading analytics...</p>
-  //       </div>
-  //     );
-  //   }
+  const ChatView: React.FC = () => {
+    const [question, setQuestion] = useState('');
+    const [isAsking, setIsAsking] = useState(false);
+    const [chatHistory, setChatHistory] = useState<Array<{
+      question: string;
+      answer: string;
+      timestamp: Date;
+      sources?: Array<{
+        file_id: string;
+        file_name: string;
+        category: string;
+      }>;
+    }>>([]);
 
-  //   return (
-  //     <div className="p-6 space-y-6">
-  //       <div>
-  //         <h2 className="text-2xl font-bold text-gray-900 mb-6">DataRoom Analytics</h2>
-  //       </div>
+    const handleAskQuestion = async () => {
+      if (!question.trim()) return;
 
-  //       {/* Connection Status Card */}
-  //       {/* <div className={`p-4 rounded-lg border ${connectionDisplay.bgColor} ${connectionDisplay.borderColor}`}>
-  //         <div className="flex items-center space-x-3">
-  //           <span className={connectionDisplay.color}>{connectionDisplay.icon}</span>
-  //           <div>
-  //             <h3 className="font-semibold">{connectionDisplay.text}</h3>
-  //             <p className="text-sm text-gray-600">{connectionDisplay.description}</p>
-  //           </div>
-  //         </div>
-  //       </div> */}
+      setIsAsking(true);
+      try {
+        const response = await dataRoomAPI.askQuestion(question);
+        
+        setChatHistory(prev => [...prev, {
+          question,
+          answer: response.answer,
+          timestamp: new Date(),
+          sources: response.sources
+        }]);
+        
+        setQuestion('');
+      } catch (error) {
+        console.error('Failed to ask question:', error);
+        setChatHistory(prev => [...prev, {
+          question,
+          answer: 'Sorry, I encountered an error while processing your question. Please try again.',
+          timestamp: new Date()
+        }]);
+      } finally {
+        setIsAsking(false);
+      }
+    };
 
-  //       {/* Overview Stats */}
-  //       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-  //         <div className="bg-white p-4 rounded-lg border shadow-sm">
-  //           <div className="text-2xl font-bold text-blue-600">{uploadedFiles.length}</div>
-  //           <div className="text-gray-600">Total Files</div>
-  //         </div>
-  //         <div className="bg-white p-4 rounded-lg border shadow-sm">
-  //           <div className="text-2xl font-bold text-green-600">{syncedCount}</div>
-  //           <div className="text-gray-600">AI Processed</div>
-  //         </div>
-  //         <div className="bg-white p-4 rounded-lg border shadow-sm">
-  //           <div className="text-2xl font-bold text-purple-600">{categorizedCount}</div>
-  //           <div className="text-gray-600">Categorized</div>
-  //         </div>
-  //         <div className="bg-white p-4 rounded-lg border shadow-sm">
-  //           <div className="text-2xl font-bold text-orange-600">
-  //             {dbStats ? Object.keys(dbStats.categoryCounts || {}).length : 0}
-  //           </div>
-  //           <div className="text-gray-600">Categories</div>
-  //         </div>
-  //       </div>
+    return (
+      <div className="p-6 h-full flex flex-col">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">AI Document Chat</h2>
+          <p className="text-gray-600">
+            Ask questions about your uploaded documents. The AI will search through your files to provide answers.
+          </p>
+        </div>
 
-  //       {/* File Status Breakdown */}
-  //       <div className="bg-white p-6 rounded-lg border shadow-sm">
-  //         <h3 className="text-lg font-semibold mb-4">File Processing Status</h3>
-  //         <div className="space-y-3">
-  //           <div className="flex items-center justify-between">
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-  //               <span className="font-medium">AI Processed</span>
-  //               <span className="text-sm text-gray-500">({syncedCount} files)</span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-32 bg-gray-200 rounded-full h-2">
-  //                 <div 
-  //                   className="bg-green-500 h-2 rounded-full transition-all duration-300"
-  //                   style={{ width: `${uploadedFiles.length > 0 ? (syncedCount / uploadedFiles.length) * 100 : 0}%` }}
-  //                 ></div>
-  //               </div>
-  //               <span className="text-sm font-medium w-12 text-right">
-  //                 {uploadedFiles.length > 0 ? ((syncedCount / uploadedFiles.length) * 100).toFixed(1) : 0}%
-  //               </span>
-  //             </div>
-  //           </div>
-            
-  //           <div className="flex items-center justify-between">
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-  //               <span className="font-medium">Local Only</span>
-  //               <span className="text-sm text-gray-500">({uploadedFiles.length - syncedCount} files)</span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-32 bg-gray-200 rounded-full h-2">
-  //                 <div 
-  //                   className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-  //                   style={{ width: `${uploadedFiles.length > 0 ? ((uploadedFiles.length - syncedCount) / uploadedFiles.length) * 100 : 0}%` }}
-  //                 ></div>
-  //               </div>
-  //               <span className="text-sm font-medium w-12 text-right">
-  //                 {uploadedFiles.length > 0 ? (((uploadedFiles.length - syncedCount) / uploadedFiles.length) * 100).toFixed(1) : 0}%
-  //               </span>
-  //             </div>
-  //           </div>
-  //         </div>
-  //       </div>
+        {uploadedFiles.length === 0 && (
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="w-5 h-5 text-blue-600" />
+              <span className="text-blue-800 font-medium">No Documents Available</span>
+            </div>
+            <p className="text-blue-700 text-sm mt-1">
+              Upload some documents first to start asking questions about them.
+            </p>
+          </div>
+        )}
 
-  //       {/* Category Breakdown */}
-  //       {dbStats && dbStats.categoryCounts && (
-  //         <div className="bg-white p-6 rounded-lg border shadow-sm">
-  //           <h3 className="text-lg font-semibold mb-4">Files by Category</h3>
-  //           <div className="space-y-3">
-  //             {Object.entries(dbStats.categoryCounts).map(([category, count]) => {
-  //               const percentage = (count as number / dbStats.totalFiles) * 100;
-  //               return (
-  //                 <div key={category} className="flex items-center justify-between">
-  //                   <div className="flex items-center space-x-2">
-  //                     <span className="font-medium capitalize">{category}</span>
-  //                     <span className="text-sm text-gray-500">({String(count)} files)</span>
-  //                   </div>
-  //                   <div className="flex items-center space-x-2">
-  //                     <div className="w-32 bg-gray-200 rounded-full h-2">
-  //                       <div 
-  //                         className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-  //                         style={{ width: `${percentage}%` }}
-  //                       ></div>
-  //                     </div>
-  //                     <span className="text-sm font-medium w-12 text-right">
-  //                       {percentage.toFixed(1)}%
-  //                     </span>
-  //                   </div>
-  //                 </div>
-  //               );
-  //             })}
-  //           </div>
-  //         </div>
-  //       )}
+        {/* Chat History */}
+        <div className="flex-1 overflow-y-auto mb-4 space-y-4">
+          {chatHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Start a conversation</h3>
+              <p className="text-gray-500">Ask questions about your uploaded documents</p>
+            </div>
+          ) : (
+            chatHistory.map((chat, index) => (
+              <div key={index} className="space-y-3">
+                {/* User Question */}
+                <div className="flex justify-end">
+                  <div className="bg-blue-600 text-white p-3 rounded-lg max-w-2xl">
+                    <p>{chat.question}</p>
+                    <p className="text-xs text-blue-100 mt-1">
+                      {chat.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* AI Answer */}
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 p-3 rounded-lg max-w-2xl">
+                    <p className="whitespace-pre-wrap">{chat.answer}</p>
+                    {chat.sources && chat.sources.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <p className="text-xs text-gray-600 mb-2">Sources:</p>
+                        <div className="space-y-1">
+                          {chat.sources.map((source, sourceIndex) => (
+                            <div key={sourceIndex} className="text-xs text-blue-600">
+                              {source.file_name} ({source.category})
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      {chat.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-  //       {/* Storage Information */}
-  //       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-  //         <div className="bg-white p-6 rounded-lg border shadow-sm">
-  //           <h3 className="text-lg font-semibold mb-4">Storage Details</h3>
-  //           <div className="space-y-2">
-  //             <div className="flex justify-between">
-  //               <span>Local Storage:</span>
-  //               <span className="font-medium">IndexedDB</span>
-  //             </div>
-  //             <div className="flex justify-between">
-  //               <span>Backend Storage:</span>
-  //               <span className="font-medium">
-  //                 {connectionStatus === 'online' ? 'Qdrant Vector DB' : 'Unavailable'}
-  //               </span>
-  //             </div>
-  //             <div className="flex justify-between">
-  //               <span>Total Size:</span>
-  //               <span className="font-medium">
-  //                 {dbStats ? formatFileSize(dbStats.totalSize) : '0 Bytes'}
-  //               </span>
-  //             </div>
-  //             <div className="flex justify-between">
-  //               <span>Sync Status:</span>
-  //               <span className={`font-medium ${
-  //                 connectionStatus === 'online' ? 'text-green-600' : 'text-orange-600'
-  //               }`}>
-  //                 {connectionStatus === 'online' ? 'Connected' : 'Offline'}
-  //               </span>
-  //             </div>
-  //           </div>
-  //         </div>
-
-  //         <div className="bg-white p-6 rounded-lg border shadow-sm">
-  //           <h3 className="text-lg font-semibold mb-4">Capabilities</h3>
-  //           <div className="space-y-2">
-  //             <div className="flex items-center space-x-2">
-  //               <div className={`w-2 h-2 rounded-full ${
-  //                 connectionStatus === 'online' ? 'bg-green-500' : 'bg-gray-400'
-  //               }`}></div>
-  //               <span className={connectionStatus === 'online' ? '' : 'text-gray-500'}>
-  //                 Semantic Search
-  //               </span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className={`w-2 h-2 rounded-full ${
-  //                 connectionStatus === 'online' ? 'bg-green-500' : 'bg-gray-400'
-  //               }`}></div>
-  //               <span className={connectionStatus === 'online' ? '' : 'text-gray-500'}>
-  //                 AI Document Analysis
-  //               </span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-  //               <span>Local File Storage</span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-  //               <span>Offline Access</span>
-  //             </div>
-  //             <div className="flex items-center space-x-2">
-  //               <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-  //               <span>Category Organization</span>
-  //             </div>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   );
-  // };
+        {/* Question Input */}
+        <div className="border-t pt-4">
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleAskQuestion()}
+              placeholder="Ask a question about your documents..."
+              disabled={isAsking}
+              className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-400"
+            />
+            <button
+              onClick={handleAskQuestion}
+              disabled={!question.trim() || isAsking}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              {isAsking ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Asking...</span>
+                </>
+              ) : (
+                <span>Ask</span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -325,17 +176,6 @@ const EnhancedDataRoom: React.FC = () => {
               Intelligent document management with AI capabilities
             </p>
           </div>
-          {/* <div className="flex items-center space-x-2">
-            <span className={connectionDisplay.color}>{connectionDisplay.icon}</span>
-            <span className="text-sm font-medium">{connectionDisplay.text}</span>
-            <button
-              onClick={checkConnectionStatus}
-              className="p-1 hover:bg-gray-100 rounded"
-              title="Check connection"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div> */}
         </div>
       </div>
       
@@ -373,46 +213,29 @@ const EnhancedDataRoom: React.FC = () => {
         >
           <MessageSquare className="w-4 h-4" />
           <span>AI Chat</span>
-          {connectionStatus === 'online' && (
-            <span className="px-1.5 py-0.5 bg-green-100 text-green-800 text-xs rounded">AI</span>
-          )}
+          <span className="px-1.5 py-0.5 bg-green-100 text-green-800 text-xs rounded">AI</span>
         </button>
-        {/* <button
-          className={`py-2 px-4 font-medium flex items-center space-x-2 ${
-            activeTab === 'analytics'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-          onClick={() => setActiveTab('analytics')}
-        >
-          <BarChart3 className="w-4 h-4" />
-          <span>Analytics</span>
-        </button> */}
       </div>
 
       {/* Tab Content */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white rounded-lg shadow min-h-96">
         {activeTab === 'files' && (
           <FilesView 
             files={uploadedFiles}
             onFilesChange={handleFilesChange}
             onFileUpdate={handleFileUpdate}
-            onDatabaseStats={handleDatabaseStats}
           />
         )}
         {activeTab === 'categories' && (
           <CategoriesView files={uploadedFiles} />
         )}
         {activeTab === 'chat' && (
-          <DocumentAwareChatBot />
+          // <ChatView />
+          <DocumentChatBot />
         )}
-      
-        {/* {activeTab === 'analytics' && (
-          <AnalyticsView />
-        )} */}
       </div>
     </div>
   );
 };
 
-export default EnhancedDataRoom;
+export default DataRoom;
