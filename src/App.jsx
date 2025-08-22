@@ -11,7 +11,9 @@ import SignUp from "./pages/signup";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Navbar from "./components/Navbar";
 import DataRoom from "./pages/dataRoom";
+import { ToastContainer } from 'react-toastify';
 // import DocumentResponse from "./components/documentResponse";
+
 
 // Layout component for authenticated routes
 const Layout = () => {
@@ -83,6 +85,7 @@ function App() {
   return (
     <Provider store={store}>
       <AppContent />
+      <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover />
     </Provider>
   );
 }

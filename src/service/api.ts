@@ -15,6 +15,15 @@ export interface APIFileResponse {
   status: string;
 }
 
+// Add this interface at the top with other interfaces
+export interface APIDeleteResponse {
+  message: string;
+  file_id: string;
+  file_name: string;
+  deleted_records: number;
+  timestamp: string;
+}
+
 export interface APIQuestionResponse {
   category: string;
   sources: Array<{
@@ -112,7 +121,14 @@ class DataRoomAPIService {
     if (!response.ok) {
       const errorText = await response.text();
       this.log('Upload failed', { status: response.status, errorText }, true);
-      throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      
+      if (response.status === 409) {
+        throw new Error(`A file with the name "${file.name}" already exists.`);
+      } else if (response.status === 400) {
+        throw new Error('Invalid file type or file too large (max 10MB)');
+      } else {
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
     }
 
     const data = await response.json();
@@ -258,6 +274,29 @@ class DataRoomAPIService {
   //   this.log('Mapping category to subcategory', { category, subcategory });
   //   return subcategory;
   // }
+
+  async deleteFile(fileId: string): Promise<APIDeleteResponse> {
+    this.log('Deleting file', { fileId });
+    const isHealthy = await this.checkHealth();
+    if (!isHealthy) {
+      throw new Error('Backend service is unavailable');
+    }
+  
+    const response = await fetch(`${this.baseURL}/delete/${fileId}`, {
+      method: 'DELETE',
+      headers: { accept: 'application/json' }
+    });
+  
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.log('Delete failed', { status: response.status, errorText }, true);
+      throw new Error(`Delete failed: ${response.status} - ${errorText}`);
+    }
+  
+    const data = await response.json();
+    this.log('File deleted', data);
+    return data;
+  }
 }
 
 export const dataRoomAPI = new DataRoomAPIService();
