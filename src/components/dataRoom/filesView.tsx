@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { dataRoomAPI, APIFileResponse } from '../../service/api';
 import { Upload, File, Download, AlertCircle, Cloud, Trash2, Tag, Eye, RefreshCw } from 'lucide-react';
 
+import 'react-toastify/dist/ReactToastify.css';
+import { toast } from 'react-toastify';
+
 export interface UploadedFile {
   id: string;
   name: string;
@@ -32,6 +35,7 @@ const FilesView: React.FC<FilesViewProps> = ({
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [expandedMetadata, setExpandedMetadata] = useState<Record<string, boolean>>({});
   const [refreshingFiles, setRefreshingFiles] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
     console.log('FilesView: Component mounted, loading initial data...');
@@ -100,7 +104,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       onFilesChange(uploadedFiles);
     } catch (error) {
       console.error('FilesView: Failed to load files from backend:', error);
-      alert('Failed to load files. Please check your connection and try again.');
+      toast.error('Failed to load files. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -164,10 +168,17 @@ const FilesView: React.FC<FilesViewProps> = ({
           };
           
           newUploadedFiles.push(uploadedFile);
+          toast.success(`Successfully uploaded ${file.name}`);
 
         } catch (uploadError: any) {
           console.error(`FilesView: Upload failed for ${file.name}:`, uploadError);
-          alert(`Failed to upload ${file.name}: ${uploadError.message}`);
+          toast.error(`Upload failed: ${uploadError.message}`, {
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
         }
 
         setCurrentProcessingFile(null);
@@ -179,7 +190,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       }
     } catch (error) {
       console.error('FilesView: File upload failed:', error);
-      alert('Failed to upload files. Please try again.');
+      toast.error('An unexpected error occurred during file upload');
     } finally {
       setIsLoading(false);
       setCurrentProcessingFile(null);
@@ -223,23 +234,31 @@ const FilesView: React.FC<FilesViewProps> = ({
       console.log(`FilesView: Successfully downloaded ${uploadedFile.name}`);
     } catch (error) {
       console.error('FilesView: Failed to download file:', error);
-      alert('Failed to download file. Please try again.');
+      toast.error('Failed to download file. Please try again.');
     }
   };
 
   const deleteFile = async (fileId: string) => {
-    if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
-      return;
-    }
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+    
+    setFileToDelete({ id: fileId, name: file.name });
+  };
+
+  const confirmDelete = async () => {
+    if (!fileToDelete) return;
     
     try {
-      // Note: Backend API doesn't have delete endpoint yet
-      // For now, just remove from local state
-      onFilesChange(files.filter(file => file.id !== fileId));
-      console.log(`FilesView: File ${fileId} removed from local state`);
+      await dataRoomAPI.deleteFile(fileToDelete.id);
+      onFilesChange(files.filter(file => file.id !== fileToDelete.id));
+      console.log(`FilesView: File ${fileToDelete.id} deleted successfully`);
+      toast.success('File deleted successfully');
     } catch (error) {
       console.error('FilesView: Failed to delete file:', error);
-      alert('Failed to delete file. Please try again.');
+      toast.error('Failed to delete file. Please try again.');
+      
+    } finally {
+      setFileToDelete(null);
     }
   };
 
@@ -294,9 +313,10 @@ const FilesView: React.FC<FilesViewProps> = ({
   const uncategorizedCount = files.length - categorizedCount;
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex flex-col h-full p-4">
+    
       {/* Header with Refresh */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center ">
         <div>
           <h2 className="text-xl font-semibold">Upload Files</h2>
           <p className="text-gray-600 text-sm mt-1">
@@ -349,7 +369,7 @@ const FilesView: React.FC<FilesViewProps> = ({
 
       {/* Stats */}
       {files.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-2">
           <div className="bg-white p-4 rounded-lg border shadow-sm">
             <div className="text-2xl font-bold text-blue-600">{files.length}</div>
             <div className="text-sm text-gray-600">Total Files</div>
@@ -538,6 +558,35 @@ const FilesView: React.FC<FilesViewProps> = ({
             <Upload className="w-4 h-4 mr-2" />
             Upload Files
           </button>
+        </div>
+      )}
+
+      {fileToDelete && (
+       <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex items-center mb-4">
+              <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
+              <h3 className="text-lg font-semibold">Delete File</h3>
+            </div>
+            <p className="mb-6">
+              Are you sure you want to delete <span className="font-medium">{fileToDelete.name}</span>? 
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setFileToDelete(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
