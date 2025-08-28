@@ -413,7 +413,7 @@ const DocumentChatBot = () => {
         <div className="flex items-center justify-between p-3 md:p-4">
           <div className="flex items-center space-x-2 md:space-x-3">
             <Avatar className="h-8 w-8 md:h-10 md:w-10">
-              <AvatarFallback className="bg-blue-500 text-white">
+              <AvatarFallback className="bg-pink-600 text-white">
                 <Bot className="h-4 w-4 md:h-5 md:w-5" />
               </AvatarFallback>
             </Avatar>
@@ -435,7 +435,7 @@ const DocumentChatBot = () => {
               <div className={`flex gap-2 md:gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {message.type === 'bot' && (
                   <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
-                    <AvatarFallback className={`text-white ${message.isError ? 'bg-red-500' : 'bg-blue-500'}`}>
+                    <AvatarFallback className={`text-white ${message.isError ? 'bg-red-500' : 'bg-pink-600'}`}>
                       {message.isError ? <AlertTriangle className="h-3 w-3 md:h-4 md:w-4" /> : <Bot className="h-3 w-3 md:h-4 md:w-4" />}
                     </AvatarFallback>
                   </Avatar>
@@ -444,7 +444,7 @@ const DocumentChatBot = () => {
                 <div className={`max-w-[85%] md:max-w-[75%] space-y-2 ${message.type === 'user' ? 'order-first' : ''}`}>
                   <div className={`rounded-2xl px-3 py-2 md:px-4 md:py-3 ${
                     message.type === 'user' 
-                      ? 'bg-blue-500 text-white ml-auto' 
+                      ? 'bg-gray-500 text-white ml-auto' 
                       : message.isError
                       ? 'bg-red-50 border border-red-200'
                       : 'bg-muted'
@@ -483,7 +483,7 @@ const DocumentChatBot = () => {
 
                 {message.type === 'user' && (
                   <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
-                    <AvatarFallback className="bg-gray-500 text-white">
+                    <AvatarFallback className="bg-pink-500 text-white">
                       <User className="h-3 w-3 md:h-4 md:w-4" />
                     </AvatarFallback>
                   </Avatar>
@@ -496,7 +496,7 @@ const DocumentChatBot = () => {
           {isTyping && (
             <div className="flex gap-2 md:gap-3 justify-start">
               <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
-                <AvatarFallback className="bg-blue-500 text-white">
+                <AvatarFallback className="bg-pink-600 text-white">
                   <Bot className="h-3 w-3 md:h-4 md:w-4" />
                 </AvatarFallback>
               </Avatar>
@@ -535,7 +535,7 @@ const DocumentChatBot = () => {
               size="icon"
               onClick={handleSendMessage}
               disabled={!inputValue.trim() || isTyping}
-              className="h-9 w-9 p-0 bg-blue-500 hover:bg-blue-600"
+              className="h-9 w-9 p-0 bg-pink-600 hover:bg-pink-700"
               title="Send message"
             >
               {isTyping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

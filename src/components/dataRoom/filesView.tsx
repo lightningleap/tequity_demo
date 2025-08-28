@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { dataRoomAPI, APIFileResponse } from '../../service/api';
 import { Upload, File, Download, AlertCircle, Cloud, Trash2, Tag, Eye, RefreshCw } from 'lucide-react';
 
@@ -36,6 +37,34 @@ const FilesView: React.FC<FilesViewProps> = ({
   const [expandedMetadata, setExpandedMetadata] = useState<Record<string, boolean>>({});
   const [refreshingFiles, setRefreshingFiles] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<{id: string, name: string} | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const loaderMessages = [
+    {
+      title: "File Drop, Auto-Organized",
+      description: "Just drag and drop – AI handles the structure.",
+    },
+    {
+      title: "Activity Tracking",
+      description: "Know who's looking, when, and at what.",
+    },
+    {
+      title: "AI-Powered Search and Retrieval",
+      description: "Investors ask. Tequity finds it instantly.",
+    },
+    {
+      title: "Secure & Always Deal-Ready",
+      description: "Your data room stays clean, current, and locked down.",
+    },
+  ];
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % loaderMessages.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isLoading, loaderMessages.length]);
 
   useEffect(() => {
     console.log('FilesView: Component mounted, loading initial data...');
@@ -185,7 +214,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       }
 
       if (newUploadedFiles.length > 0) {
-        onFilesChange([...files, ...newUploadedFiles]);
+        onFilesChange([...newUploadedFiles, ...files]);
         console.log(`FilesView: Successfully uploaded ${newUploadedFiles.length} files`);
       }
     } catch (error) {
@@ -335,21 +364,26 @@ const FilesView: React.FC<FilesViewProps> = ({
 
       {/* Upload Area */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'
-        } ${isLoading ? 'pointer-events-none opacity-50' : ''}`}
+        className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 ${
+          isDragging
+            ? 'border-blue-500 bg-blue-50 shadow-md scale-105'
+            : 'border-gray-300 hover:border-blue-400 hover:shadow-sm'
+        } ${isLoading ? 'pointer-events-none' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <Upload className="w-8 h-8 text-gray-400" />
-          <div className="text-sm text-gray-600">
+        {!isLoading ? (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Upload className="w-10 h-10 text-blue-500" />
+            <div className="text-base text-gray-700 font-medium">
+              Drag & Drop your files here
+            </div>
             <label
               htmlFor="file-upload"
-              className="relative cursor-pointer text-blue-600 hover:text-blue-500"
+              className="relative cursor-pointer px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shadow transition"
             >
-              <span>Drag and drop files here or click to browse</span>
+              Browse Files
               <input
                 id="file-upload"
                 name="file-upload"
@@ -360,11 +394,53 @@ const FilesView: React.FC<FilesViewProps> = ({
                 onChange={(e) => handleFileChange(e.target.files)}
               />
             </label>
+            <p className="text-xs text-gray-500">
+              Supported formats: Excel, CSV, PDF, Word documents
+            </p>
           </div>
-          <p className="text-xs text-gray-500">
-            Supported formats: Excel, CSV, PDF, Word documents
-          </p>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center space-y-6 py-6 bg-white rounded-xl p-6 shadow-sm">
+            {/* Carousel Highlights */}
+            <div className="relative h-20 w-full max-w-sm">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={carouselIndex}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                  className="absolute w-full text-center"
+                >
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {loaderMessages[carouselIndex].title}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {loaderMessages[carouselIndex].description}
+                  </p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+            {/* Animated Progress Bar */}
+            <div className="w-full max-w-md">
+              <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
+                <div className="h-full w-1/3 bg-blue-500 animate-pulse rounded-full"></div>
+              </div>
+            </div>
+
+            {/* Current File Name */}
+            {currentProcessingFile && (
+              <p className="text-sm text-gray-600">
+                Processing: <span className="font-semibold">{currentProcessingFile}</span>
+              </p>
+            )}
+            <p className="text-sm text-gray-500">
+              {currentProcessingFile
+                ? 'Uploading and processing with AI...'
+                : 'Loading your files...'}
+            </p>
+
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -388,6 +464,24 @@ const FilesView: React.FC<FilesViewProps> = ({
           </div>
         </div>
       )}
+
+         {/* Loading State */}
+         {/* {isLoading && (
+        <div className="text-center py-8">
+          <div className="max-w-md mx-auto w-full">
+            <div className="animate-pulse">
+              <div className="h-2 bg-blue-200 rounded-full"></div>
+            </div>
+          </div>
+          {currentProcessingFile && (
+            <p className="text-sm text-gray-600 mt-2">Processing: {currentProcessingFile}</p>
+          )}
+          <p className="text-sm text-gray-600 mt-2">
+            {currentProcessingFile ? 'Uploading and processing with AI...' : 'Loading files...'}
+          </p>
+        </div>
+      )} */}
+
 
       {/* Files List */}
       {files.length > 0 && (
@@ -505,16 +599,29 @@ const FilesView: React.FC<FilesViewProps> = ({
                       <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
                         <h4 className="text-sm font-medium text-gray-700 mb-2">File Metadata</h4>
                         <div className="space-y-1">
-                          {Object.entries(file.metadata).map(([key, value]) => (
-                            <div key={key} className="flex justify-between items-start text-xs">
-                              <span className="font-medium text-gray-600 mr-2">
-                                {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
-                              </span>
-                              <span className="text-right flex-1 min-w-0">
-                                {renderMetadataValue(key, value)}
-                              </span>
-                            </div>
-                          ))}
+                          {Object.entries(file.metadata)
+                            .filter(([key]) => ![
+                              'file_id',
+                              'safe_name',
+                              'processed_by_ai',
+                              'semantic_search_enabled',
+                              'ingestion_timestamp',
+                              'download_url',
+                              'file_size_bytes',
+                              'points_count',
+                              'point_ids',
+                              'last_accessed'
+                            ].includes(key))
+                            .map(([key, value]) => (
+                              <div key={key} className="flex justify-between items-start text-xs">
+                                <span className="font-medium text-gray-600 mr-2">
+                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                                </span>
+                                <span className="text-right flex-1 min-w-0">
+                                  {renderMetadataValue(key, value)}
+                                </span>
+                              </div>
+                            ))}
                         </div>
                       </div>
                     )}
@@ -526,23 +633,7 @@ const FilesView: React.FC<FilesViewProps> = ({
         </div>
       )}
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="text-center py-8">
-          <div className="max-w-md mx-auto w-full">
-            <div className="animate-pulse">
-              <div className="h-2 bg-blue-200 rounded-full"></div>
-            </div>
-          </div>
-          {currentProcessingFile && (
-            <p className="text-sm text-gray-600 mt-2">Processing: {currentProcessingFile}</p>
-          )}
-          <p className="text-sm text-gray-600 mt-2">
-            {currentProcessingFile ? 'Uploading and processing with AI...' : 'Loading files...'}
-          </p>
-        </div>
-      )}
-
+   
       {/* Empty State */}
       {files.length === 0 && !isLoading && (
         <div className="text-center py-12">

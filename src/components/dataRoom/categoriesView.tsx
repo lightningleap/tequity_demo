@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar, DollarSign, Users, Percent, Eye, EyeOff, Upload, Cloud, Loader } from 'lucide-react';
+import {
+  ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar,
+  DollarSign, Users, Percent, Eye, EyeOff, Upload, Cloud, Loader,
+  ShoppingBag, Package, Megaphone, Shield, Settings,
+  Code,
+  Presentation
+} from 'lucide-react';
 import { UploadedFile } from './filesView';
 import { dataRoomAPI } from '../../service/api';
 
@@ -48,7 +54,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
         acc[category] = true;
         return acc;
       }, {} as Record<string, boolean>);
-      
+
       setExpandedCategories(prev => ({ ...prev, ...categoriesWithFiles }));
     }
   }, [files]);
@@ -64,7 +70,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       if (!result[category]) {
         result[category] = [];
       }
-      
+
       result[category].push(file);
     });
 
@@ -87,11 +93,11 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
     }
 
     setLoadingMetadata(prev => ({ ...prev, [fileId]: true }));
-    
+
     try {
       console.log(`CategoriesView: Fetching metadata for file ${fileId}`);
       const metadata = await dataRoomAPI.getFileMetadata(fileId);
-      
+
       // Extract detailed metadata from the API response
       const enrichedMetadata = {
         file_id: metadata.file_id,
@@ -129,10 +135,10 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
   // Batch load metadata for all files in a category when expanded
   const handleCategoryExpand = async (category: string) => {
     toggleCategory(category);
-    
+
     if (!expandedCategories[category]) { // If expanding
       const categoryFiles = categorizedFiles[category] || [];
-      
+
       // Batch load metadata with some delay to avoid overwhelming the API
       for (const file of categoryFiles) {
         if (!fileMetadata[file.fileId] && !loadingMetadata[file.fileId]) {
@@ -156,11 +162,11 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
     if (value === null || value === undefined) {
       return { type: 'null', icon: <Hash className="w-3 h-3" />, color: 'text-gray-400' };
     }
-    
+
     if (typeof value === 'boolean') {
       return { type: 'boolean', icon: <Hash className="w-3 h-3" />, color: 'text-purple-600' };
     }
-    
+
     if (typeof value === 'number') {
       if (value > 1000000) {
         return { type: 'currency', icon: <DollarSign className="w-3 h-3" />, color: 'text-green-600' };
@@ -170,7 +176,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       }
       return { type: 'number', icon: <Hash className="w-3 h-3" />, color: 'text-blue-600' };
     }
-    
+
     if (typeof value === 'string') {
       if (value.match(/^\d{4}-\d{2}-\d{2}/)) {
         return { type: 'date', icon: <Calendar className="w-3 h-3" />, color: 'text-orange-600' };
@@ -180,30 +186,30 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       }
       return { type: 'string', icon: <FileText className="w-3 h-3" />, color: 'text-gray-700' };
     }
-    
+
     if (Array.isArray(value)) {
       return { type: 'array', icon: <Hash className="w-3 h-3" />, color: 'text-red-600' };
     }
-    
+
     if (typeof value === 'object') {
       return { type: 'object', icon: <Folder className="w-3 h-3" />, color: 'text-blue-500' };
     }
-    
+
     return { type: 'unknown', icon: <Hash className="w-3 h-3" />, color: 'text-gray-500' };
   };
 
   // Enhanced value formatting
   const formatValue = (value: any): string => {
     if (value === null || value === undefined) return 'null';
-    
+
     if (typeof value === 'boolean') {
       return value ? 'true' : 'false';
     }
-    
+
     if (typeof value === 'number') {
       if (value > 1000000) {
-        return new Intl.NumberFormat('en-US', { 
-          style: 'currency', 
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
           currency: 'USD',
           minimumFractionDigits: 0,
           maximumFractionDigits: 0
@@ -217,11 +223,11 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       }
       return value.toFixed(2);
     }
-    
+
     if (typeof value === 'string') {
       return `"${value}"`;
     }
-    
+
     return String(value);
   };
 
@@ -270,7 +276,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
               </span>
             </button>
           </div>
-          
+
           {isExpanded && (
             <div className="ml-4 border-l-2 border-red-200 pl-3 space-y-2">
               {metadata.slice(0, 5).map((item, index) => (
@@ -323,13 +329,13 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
               </span>
             </button>
           </div>
-          
+
           {isExpanded && (
             <div className="ml-4 border-l-2 border-blue-200 pl-3 space-y-2">
               {entries.slice(0, 10).map(([key, value]) => {
                 const { icon, color } = getValueType(value);
                 const keyPath = `${objPath}_${key}`;
-                
+
                 return (
                   <div key={key} className="space-y-1">
                     <div className="flex items-start space-x-2">
@@ -407,10 +413,10 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
         (file) => {
           const fileMatches = file.name.toLowerCase().includes(searchLower) ||
             category.toLowerCase().includes(searchLower);
-            
+
           const metadata = fileMetadata[file.fileId];
           const metadataMatches = metadata ? searchInValue(metadata) : false;
-          
+
           return fileMatches || metadataMatches;
         }
       );
@@ -434,23 +440,66 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
   };
 
   const getCategoryIcon = (category: string) => {
-    const icons: Record<string, React.ReactNode> = {
-      'financial': <DollarSign className="w-5 h-5 text-green-500" />,
-      'sales': <Users className="w-5 h-5 text-blue-500" />,
-      'inventory': <Hash className="w-5 h-5 text-purple-500" />,
-      'hr': <Users className="w-5 h-5 text-orange-500" />,
-      'marketing': <FileText className="w-5 h-5 text-pink-500" />,
-      'legal': <FileText className="w-5 h-5 text-red-500" />,
-      'operations': <Hash className="w-5 h-5 text-indigo-500" />,
-      'general': <Folder className="w-5 h-5 text-gray-500" />,
-      'uncategorized': <Folder className="w-5 h-5 text-gray-400" />,
-      // Dynamic icons for backend categories
-      'monthly financials': <DollarSign className="w-5 h-5 text-green-500" />,
-      'quarterly reports': <FileText className="w-5 h-5 text-blue-500" />,
-      'annual reports': <FileText className="w-5 h-5 text-purple-500" />
-    };
+    const normalizedCategory = category?.toString().trim().toLowerCase() || 'uncategorized';
     
-    return icons[category.toLowerCase()] || <Folder className="w-5 h-5 text-gray-500" />;
+    // Icon mapping for better maintainability
+    const iconMap = [
+      {
+        keywords: ['financial', 'revenue', 'account', 'ytd', 'finance', 'tax', 'balance sheet'],
+        icon: <DollarSign className="w-5 h-5 text-green-600" />
+      },
+      {
+        keywords: ['contract', 'agreement', 'nda', 'mou'],
+        icon: <FileText className={`w-5 h-5 ${
+          normalizedCategory.includes('customer') ? 'text-blue-600' : 
+          normalizedCategory.includes('vendor') ? 'text-orange-600' : 
+          'text-gray-600'
+        }`} />
+      },
+      {
+        keywords: ['cap table', 'stock', 'option', 'grant', 'equity', 'shares'],
+        icon: <Users className="w-5 h-5 text-indigo-600" />
+      },
+      {
+        keywords: ['sales', 'customer', 'client', 'deal'],
+        icon: <ShoppingBag className="w-5 h-5 text-blue-600" />
+      },
+      {
+        keywords: ['inventory', 'stock', 'supply chain', 'warehouse'],
+        icon: <Package className="w-5 h-5 text-orange-600" />
+      },
+      {
+        keywords: ['hr', 'human resource', 'employee', 'staff', 'payroll', 'benefits'],
+        icon: <Users className="w-5 h-5 text-purple-600" />
+      },
+      {
+        keywords: ['marketing', 'campaign', 'advertising', 'brand', 'social media'],
+        icon: <Megaphone className="w-5 h-5 text-pink-600" />
+      },
+      {
+        keywords: ['legal', 'compliance', 'regulatory', 'policy'],
+        icon: <Shield className="w-5 h-5 text-gray-600" />
+      },
+      {
+        keywords: ['operations', 'ops', 'logistics', 'facilities'],
+        icon: <Settings className="w-5 h-5 text-teal-600" />
+      },
+      {
+        keywords: ['product', 'development', 'r&d', 'research'],
+        icon: <Code className="w-5 h-5 text-blue-400" />
+      },
+      {
+        keywords: ['meeting', 'minutes', 'presentation', 'deck'],
+        icon: <Presentation className="w-5 h-5 text-amber-600" />
+      }
+    ];
+  
+    // Find the first matching category
+    const matchedIcon = iconMap.find(item => 
+      item.keywords.some(keyword => normalizedCategory.includes(keyword))
+    );
+  
+    return matchedIcon?.icon || <Folder className="w-5 h-5 text-gray-400" />;
   };
 
   // Early return for no files
@@ -527,8 +576,8 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
           <h4 className="font-medium text-blue-900 mb-2">Available Categories</h4>
           <div className="flex flex-wrap gap-2">
             {availableCategories.map(category => (
-              <span 
-                key={category} 
+              <span
+                key={category}
                 className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
               >
                 {category}
@@ -553,7 +602,9 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                 <ChevronRight className="w-5 h-5 mr-2 text-gray-600" />
               )}
               {getCategoryIcon(category)}
-              <span className="text-gray-900 ml-2">{category}</span>
+              <span className="text-gray-900 ml-2 capitalize">
+                {category.toLowerCase()}
+              </span>
               <span className="ml-auto text-sm text-gray-500">
                 {categoryFiles.length} files
               </span>
@@ -634,11 +685,10 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                                   </div>
                                   <div>
                                     <span className="font-medium text-gray-600">Status:</span>
-                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${
-                                      metadata.status === 'active' 
-                                        ? 'bg-green-100 text-green-800' 
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${metadata.status === 'active'
+                                        ? 'bg-green-100 text-green-800'
                                         : 'bg-yellow-100 text-yellow-800'
-                                    }`}>
+                                      }`}>
                                       {metadata.processing_status}
                                     </span>
                                   </div>
