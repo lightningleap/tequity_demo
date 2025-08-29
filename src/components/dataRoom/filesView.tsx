@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { dataRoomAPI, APIFileResponse } from '../../service/api';
 import { Upload, File, Download, AlertCircle, Cloud, Trash2, Tag, Eye, RefreshCw } from 'lucide-react';
 
@@ -36,6 +37,34 @@ const FilesView: React.FC<FilesViewProps> = ({
   const [expandedMetadata, setExpandedMetadata] = useState<Record<string, boolean>>({});
   const [refreshingFiles, setRefreshingFiles] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<{id: string, name: string} | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const loaderMessages = [
+    {
+      title: "File Drop, Auto-Organized",
+      description: "Just drag and drop – AI handles the structure.",
+    },
+    {
+      title: "Activity Tracking",
+      description: "Know who's looking, when, and at what.",
+    },
+    {
+      title: "AI-Powered Search and Retrieval",
+      description: "Investors ask. Tequity finds it instantly.",
+    },
+    {
+      title: "Secure & Always Deal-Ready",
+      description: "Your data room stays clean, current, and locked down.",
+    },
+  ];
+
+  useEffect(() => {
+    if (!isLoading) return;
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % loaderMessages.length);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isLoading, loaderMessages.length]);
 
   useEffect(() => {
     console.log('FilesView: Component mounted, loading initial data...');
@@ -124,69 +153,120 @@ const FilesView: React.FC<FilesViewProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const createUploadedFile = (file: File, apiResponse: APIFileResponse): UploadedFile => ({
+    id: apiResponse.file_id,
+    name: apiResponse.file_name,
+    size: file.size,
+    type: file.type,
+    uploadDate: new Date(apiResponse.ingestion_timestamp),
+    category: apiResponse.category || 'uncategorized',
+    fileId: apiResponse.file_id,
+    aiProcessed: true,
+    metadata: {
+      originalName: apiResponse.original_name,
+      safeName: apiResponse.safe_name,
+      numRecords: apiResponse.num_records,
+      numSheets: apiResponse.num_sheets,
+      downloadUrl: apiResponse.download_url,
+      pointIds: apiResponse.point_ids,
+      ingestionTimestamp: apiResponse.ingestion_timestamp,
+      lastAccessed: apiResponse.last_accessed,
+      status: apiResponse.status,
+      fileSizeBytes: apiResponse.file_size_bytes,
+      pointsCount: apiResponse.point_ids ? apiResponse.point_ids.length : 0
+    }
+  });
+
+  const showSuccessToast = (message: string) => {
+    toast.success(message, {
+      position: 'top-right',
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+  };
+
+  const handleUploadError = (fileName: string, error: unknown) => {
+    console.error(`FilesView: Failed to upload ${fileName}:`, error);
+    toast.error(
+      `Failed to upload ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      }
+    );
+  };
+
   const handleFileChange = async (fileList: FileList | null) => {
-    if (!fileList) {
+    if (!fileList || fileList.length === 0) {
       console.log('FilesView: No files provided');
       return;
     }
+    
+    // Store the current files in a variable to avoid closure issues
+    const currentFiles = [...files];
 
     console.log(`FilesView: Starting upload of ${fileList.length} files...`);
     setIsLoading(true);
     
     try {
-      const newUploadedFiles: UploadedFile[] = [];
-
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
+      const files = Array.from(fileList);
+      setCurrentProcessingFile('Multiple files');
+      
+      // For single file, use the existing upload endpoint for backward compatibility
+      if (files.length === 1) {
+        const file = files[0];
         setCurrentProcessingFile(file.name);
         
         try {
-          console.log(`FilesView: Uploading ${file.name} to backend...`);
+          console.log(`FilesView: Uploading single file ${file.name}...`);
           const apiResponse = await dataRoomAPI.uploadFile(file);
+          const uploadedFile = createUploadedFile(file, apiResponse);
           
-          const uploadedFile: UploadedFile = {
-            id: apiResponse.file_id,
-            name: apiResponse.file_name,
-            size: apiResponse.file_size_bytes,
-            type: file.type,
-            uploadDate: new Date(apiResponse.ingestion_timestamp),
-            category: apiResponse.category,
-            metadata: {
-              file_id: apiResponse.file_id,
-              original_name: apiResponse.original_name,
-              safe_name: apiResponse.safe_name,
-              num_records: apiResponse.num_records,
-              num_sheets: apiResponse.num_sheets,
-              point_ids: apiResponse.point_ids,
-              download_url: apiResponse.download_url,
-              ingestion_timestamp: apiResponse.ingestion_timestamp,
-              status: apiResponse.status,
-              file_size_bytes: apiResponse.file_size_bytes
-            },
-            fileId: apiResponse.file_id,
-            aiProcessed: apiResponse.status === 'active'
-          };
-          
-          newUploadedFiles.push(uploadedFile);
-          toast.success(`Successfully uploaded ${file.name}`);
-
-        } catch (uploadError: any) {
-          console.error(`FilesView: Upload failed for ${file.name}:`, uploadError);
-          toast.error(`Upload failed: ${uploadError.message}`, {
-            autoClose: 5000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-          });
+          onFilesChange([uploadedFile]);
+          showSuccessToast(`Uploaded ${file.name} successfully!`);
+          console.log(`FilesView: Successfully uploaded ${file.name}`);
+        } catch (error) {
+          handleUploadError(file.name, error);
         }
-
-        setCurrentProcessingFile(null);
-      }
-
-      if (newUploadedFiles.length > 0) {
-        onFilesChange([...files, ...newUploadedFiles]);
-        console.log(`FilesView: Successfully uploaded ${newUploadedFiles.length} files`);
+      } else {
+        // For multiple files, use the new batch upload endpoint
+        console.log(`FilesView: Uploading ${files.length} files in batch...`);
+        
+        try {
+          const result = await dataRoomAPI.uploadMultipleFiles(files);
+          
+          if (!result || !result.uploaded_files || !Array.isArray(result.uploaded_files)) {
+            console.error('Invalid response format from server:', result);
+            throw new Error('Invalid response format from server: missing uploaded_files array');
+          }
+          
+          // Create uploaded files from the response
+          const uploadedFiles = result.uploaded_files.map((fileResponse, index) => {
+            if (!fileResponse || !fileResponse.file_id) {
+              console.error('Invalid file response at index', index, fileResponse);
+              throw new Error(`Invalid response for file ${files[index]?.name || 'unknown'}`);
+            }
+            return createUploadedFile(files[index], fileResponse);
+          });
+          
+          // Add the new files to the existing ones
+          onFilesChange([...currentFiles, ...uploadedFiles]);
+          showSuccessToast(`Successfully uploaded ${uploadedFiles.length} files!`);
+          console.log(`FilesView: Successfully uploaded ${uploadedFiles.length} files in batch. Total files:`, currentFiles.length + uploadedFiles.length);
+        } catch (error) {
+          console.error('FilesView: Batch upload failed:', error);
+          toast.error(
+            error instanceof Error ? error.message : 'Failed to upload files',
+            { position: 'top-right', autoClose: 5000 }
+          );
+        }
       }
     } catch (error) {
       console.error('FilesView: File upload failed:', error);
@@ -335,21 +415,26 @@ const FilesView: React.FC<FilesViewProps> = ({
 
       {/* Upload Area */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'
-        } ${isLoading ? 'pointer-events-none opacity-50' : ''}`}
+        className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all duration-300 ${
+          isDragging
+            ? 'border-blue-500 bg-blue-50 shadow-md scale-105'
+            : 'border-gray-300 hover:border-blue-400 hover:shadow-sm'
+        } ${isLoading ? 'pointer-events-none' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <Upload className="w-8 h-8 text-gray-400" />
-          <div className="text-sm text-gray-600">
+        {!isLoading ? (
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <Upload className="w-10 h-10 text-blue-500" />
+            <div className="text-base text-gray-700 font-medium">
+              Drag & Drop your files here
+            </div>
             <label
               htmlFor="file-upload"
-              className="relative cursor-pointer text-blue-600 hover:text-blue-500"
+              className="relative cursor-pointer px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 shadow transition"
             >
-              <span>Drag and drop files here or click to browse</span>
+              Browse Files
               <input
                 id="file-upload"
                 name="file-upload"
@@ -360,11 +445,53 @@ const FilesView: React.FC<FilesViewProps> = ({
                 onChange={(e) => handleFileChange(e.target.files)}
               />
             </label>
+            <p className="text-xs text-gray-500">
+              Supported formats: Excel, CSV, PDF, Word documents
+            </p>
           </div>
-          <p className="text-xs text-gray-500">
-            Supported formats: Excel, CSV, PDF, Word documents
-          </p>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center space-y-6 py-6 bg-white rounded-xl p-6 shadow-sm">
+            {/* Carousel Highlights */}
+            <div className="relative h-20 w-full max-w-sm">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={carouselIndex}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                  className="absolute w-full text-center"
+                >
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {loaderMessages[carouselIndex].title}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {loaderMessages[carouselIndex].description}
+                  </p>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+            {/* Animated Progress Bar */}
+            <div className="w-full max-w-md">
+              <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
+                <div className="h-full w-1/3 bg-blue-500 animate-pulse rounded-full"></div>
+              </div>
+            </div>
+
+            {/* Current File Name */}
+            {currentProcessingFile && (
+              <p className="text-sm text-gray-600">
+                Processing: <span className="font-semibold">{currentProcessingFile}</span>
+              </p>
+            )}
+            <p className="text-sm text-gray-500">
+              {currentProcessingFile
+                ? 'Uploading and processing with AI...'
+                : 'Loading your files...'}
+            </p>
+
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -388,6 +515,24 @@ const FilesView: React.FC<FilesViewProps> = ({
           </div>
         </div>
       )}
+
+         {/* Loading State */}
+         {/* {isLoading && (
+        <div className="text-center py-8">
+          <div className="max-w-md mx-auto w-full">
+            <div className="animate-pulse">
+              <div className="h-2 bg-blue-200 rounded-full"></div>
+            </div>
+          </div>
+          {currentProcessingFile && (
+            <p className="text-sm text-gray-600 mt-2">Processing: {currentProcessingFile}</p>
+          )}
+          <p className="text-sm text-gray-600 mt-2">
+            {currentProcessingFile ? 'Uploading and processing with AI...' : 'Loading files...'}
+          </p>
+        </div>
+      )} */}
+
 
       {/* Files List */}
       {files.length > 0 && (
@@ -505,16 +650,29 @@ const FilesView: React.FC<FilesViewProps> = ({
                       <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
                         <h4 className="text-sm font-medium text-gray-700 mb-2">File Metadata</h4>
                         <div className="space-y-1">
-                          {Object.entries(file.metadata).map(([key, value]) => (
-                            <div key={key} className="flex justify-between items-start text-xs">
-                              <span className="font-medium text-gray-600 mr-2">
-                                {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
-                              </span>
-                              <span className="text-right flex-1 min-w-0">
-                                {renderMetadataValue(key, value)}
-                              </span>
-                            </div>
-                          ))}
+                          {Object.entries(file.metadata)
+                            .filter(([key]) => ![
+                              'file_id',
+                              'safe_name',
+                              'processed_by_ai',
+                              'semantic_search_enabled',
+                              'ingestion_timestamp',
+                              'download_url',
+                              'file_size_bytes',
+                              'points_count',
+                              'point_ids',
+                              'last_accessed'
+                            ].includes(key))
+                            .map(([key, value]) => (
+                              <div key={key} className="flex justify-between items-start text-xs">
+                                <span className="font-medium text-gray-600 mr-2">
+                                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                                </span>
+                                <span className="text-right flex-1 min-w-0">
+                                  {renderMetadataValue(key, value)}
+                                </span>
+                              </div>
+                            ))}
                         </div>
                       </div>
                     )}
@@ -526,23 +684,7 @@ const FilesView: React.FC<FilesViewProps> = ({
         </div>
       )}
 
-      {/* Loading State */}
-      {isLoading && (
-        <div className="text-center py-8">
-          <div className="max-w-md mx-auto w-full">
-            <div className="animate-pulse">
-              <div className="h-2 bg-blue-200 rounded-full"></div>
-            </div>
-          </div>
-          {currentProcessingFile && (
-            <p className="text-sm text-gray-600 mt-2">Processing: {currentProcessingFile}</p>
-          )}
-          <p className="text-sm text-gray-600 mt-2">
-            {currentProcessingFile ? 'Uploading and processing with AI...' : 'Loading files...'}
-          </p>
-        </div>
-      )}
-
+   
       {/* Empty State */}
       {files.length === 0 && !isLoading && (
         <div className="text-center py-12">
