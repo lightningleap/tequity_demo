@@ -153,69 +153,120 @@ const FilesView: React.FC<FilesViewProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const createUploadedFile = (file: File, apiResponse: APIFileResponse): UploadedFile => ({
+    id: apiResponse.file_id,
+    name: apiResponse.file_name,
+    size: file.size,
+    type: file.type,
+    uploadDate: new Date(apiResponse.ingestion_timestamp),
+    category: apiResponse.category || 'uncategorized',
+    fileId: apiResponse.file_id,
+    aiProcessed: true,
+    metadata: {
+      originalName: apiResponse.original_name,
+      safeName: apiResponse.safe_name,
+      numRecords: apiResponse.num_records,
+      numSheets: apiResponse.num_sheets,
+      downloadUrl: apiResponse.download_url,
+      pointIds: apiResponse.point_ids,
+      ingestionTimestamp: apiResponse.ingestion_timestamp,
+      lastAccessed: apiResponse.last_accessed,
+      status: apiResponse.status,
+      fileSizeBytes: apiResponse.file_size_bytes,
+      pointsCount: apiResponse.point_ids ? apiResponse.point_ids.length : 0
+    }
+  });
+
+  const showSuccessToast = (message: string) => {
+    toast.success(message, {
+      position: 'top-right',
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+  };
+
+  const handleUploadError = (fileName: string, error: unknown) => {
+    console.error(`FilesView: Failed to upload ${fileName}:`, error);
+    toast.error(
+      `Failed to upload ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      }
+    );
+  };
+
   const handleFileChange = async (fileList: FileList | null) => {
-    if (!fileList) {
+    if (!fileList || fileList.length === 0) {
       console.log('FilesView: No files provided');
       return;
     }
+    
+    // Store the current files in a variable to avoid closure issues
+    const currentFiles = [...files];
 
     console.log(`FilesView: Starting upload of ${fileList.length} files...`);
     setIsLoading(true);
     
     try {
-      const newUploadedFiles: UploadedFile[] = [];
-
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i];
+      const files = Array.from(fileList);
+      setCurrentProcessingFile('Multiple files');
+      
+      // For single file, use the existing upload endpoint for backward compatibility
+      if (files.length === 1) {
+        const file = files[0];
         setCurrentProcessingFile(file.name);
         
         try {
-          console.log(`FilesView: Uploading ${file.name} to backend...`);
+          console.log(`FilesView: Uploading single file ${file.name}...`);
           const apiResponse = await dataRoomAPI.uploadFile(file);
+          const uploadedFile = createUploadedFile(file, apiResponse);
           
-          const uploadedFile: UploadedFile = {
-            id: apiResponse.file_id,
-            name: apiResponse.file_name,
-            size: apiResponse.file_size_bytes,
-            type: file.type,
-            uploadDate: new Date(apiResponse.ingestion_timestamp),
-            category: apiResponse.category,
-            metadata: {
-              file_id: apiResponse.file_id,
-              original_name: apiResponse.original_name,
-              safe_name: apiResponse.safe_name,
-              num_records: apiResponse.num_records,
-              num_sheets: apiResponse.num_sheets,
-              point_ids: apiResponse.point_ids,
-              download_url: apiResponse.download_url,
-              ingestion_timestamp: apiResponse.ingestion_timestamp,
-              status: apiResponse.status,
-              file_size_bytes: apiResponse.file_size_bytes
-            },
-            fileId: apiResponse.file_id,
-            aiProcessed: apiResponse.status === 'active'
-          };
-          
-          newUploadedFiles.push(uploadedFile);
-          toast.success(`Successfully uploaded ${file.name}`);
-
-        } catch (uploadError: any) {
-          console.error(`FilesView: Upload failed for ${file.name}:`, uploadError);
-          toast.error(`Upload failed: ${uploadError.message}`, {
-            autoClose: 5000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-          });
+          onFilesChange([uploadedFile]);
+          showSuccessToast(`Uploaded ${file.name} successfully!`);
+          console.log(`FilesView: Successfully uploaded ${file.name}`);
+        } catch (error) {
+          handleUploadError(file.name, error);
         }
-
-        setCurrentProcessingFile(null);
-      }
-
-      if (newUploadedFiles.length > 0) {
-        onFilesChange([...newUploadedFiles, ...files]);
-        console.log(`FilesView: Successfully uploaded ${newUploadedFiles.length} files`);
+      } else {
+        // For multiple files, use the new batch upload endpoint
+        console.log(`FilesView: Uploading ${files.length} files in batch...`);
+        
+        try {
+          const result = await dataRoomAPI.uploadMultipleFiles(files);
+          
+          if (!result || !result.uploaded_files || !Array.isArray(result.uploaded_files)) {
+            console.error('Invalid response format from server:', result);
+            throw new Error('Invalid response format from server: missing uploaded_files array');
+          }
+          
+          // Create uploaded files from the response
+          const uploadedFiles = result.uploaded_files.map((fileResponse, index) => {
+            if (!fileResponse || !fileResponse.file_id) {
+              console.error('Invalid file response at index', index, fileResponse);
+              throw new Error(`Invalid response for file ${files[index]?.name || 'unknown'}`);
+            }
+            return createUploadedFile(files[index], fileResponse);
+          });
+          
+          // Add the new files to the existing ones
+          onFilesChange([...currentFiles, ...uploadedFiles]);
+          showSuccessToast(`Successfully uploaded ${uploadedFiles.length} files!`);
+          console.log(`FilesView: Successfully uploaded ${uploadedFiles.length} files in batch. Total files:`, currentFiles.length + uploadedFiles.length);
+        } catch (error) {
+          console.error('FilesView: Batch upload failed:', error);
+          toast.error(
+            error instanceof Error ? error.message : 'Failed to upload files',
+            { position: 'top-right', autoClose: 5000 }
+          );
+        }
       }
     } catch (error) {
       console.error('FilesView: File upload failed:', error);

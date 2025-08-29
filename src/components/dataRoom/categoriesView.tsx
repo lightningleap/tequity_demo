@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, JSX } from 'react';
 import {
   ChevronDown, ChevronRight, File, Folder, FileText, Search, Hash, Calendar,
   DollarSign, Users, Percent, Eye, EyeOff, Upload, Cloud, Loader,
-  ShoppingBag, Package, Megaphone, Shield, Settings,
-  Code,
-  Presentation
+  Check, X, AlertCircle, Plus, Trash2, Download, Copy, MoreVertical, Filter,
+  ArrowDownToLine, ArrowUpToLine, ArrowUpDown, ChevronsUpDown, ChevronUp, ChevronLeft,
+  BarChart, PieChart, LineChart, BarChart2,
+  Settings, Shield, ShoppingBag, Package, Megaphone, Code, Presentation
 } from 'lucide-react';
 import { UploadedFile } from './filesView';
 import { dataRoomAPI } from '../../service/api';
@@ -440,66 +441,24 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
   };
 
   const getCategoryIcon = (category: string) => {
-    const normalizedCategory = category?.toString().trim().toLowerCase() || 'uncategorized';
+    const normalizedCategory = category?.toString().trim() || 'Uncategorized';
     
-    // Icon mapping for better maintainability
-    const iconMap = [
-      {
-        keywords: ['financial', 'revenue', 'account', 'ytd', 'finance', 'tax', 'balance sheet'],
-        icon: <DollarSign className="w-5 h-5 text-green-600" />
-      },
-      {
-        keywords: ['contract', 'agreement', 'nda', 'mou'],
-        icon: <FileText className={`w-5 h-5 ${
-          normalizedCategory.includes('customer') ? 'text-blue-600' : 
-          normalizedCategory.includes('vendor') ? 'text-orange-600' : 
-          'text-gray-600'
-        }`} />
-      },
-      {
-        keywords: ['cap table', 'stock', 'option', 'grant', 'equity', 'shares'],
-        icon: <Users className="w-5 h-5 text-indigo-600" />
-      },
-      {
-        keywords: ['sales', 'customer', 'client', 'deal'],
-        icon: <ShoppingBag className="w-5 h-5 text-blue-600" />
-      },
-      {
-        keywords: ['inventory', 'stock', 'supply chain', 'warehouse'],
-        icon: <Package className="w-5 h-5 text-orange-600" />
-      },
-      {
-        keywords: ['hr', 'human resource', 'employee', 'staff', 'payroll', 'benefits'],
-        icon: <Users className="w-5 h-5 text-purple-600" />
-      },
-      {
-        keywords: ['marketing', 'campaign', 'advertising', 'brand', 'social media'],
-        icon: <Megaphone className="w-5 h-5 text-pink-600" />
-      },
-      {
-        keywords: ['legal', 'compliance', 'regulatory', 'policy'],
-        icon: <Shield className="w-5 h-5 text-gray-600" />
-      },
-      {
-        keywords: ['operations', 'ops', 'logistics', 'facilities'],
-        icon: <Settings className="w-5 h-5 text-teal-600" />
-      },
-      {
-        keywords: ['product', 'development', 'r&d', 'research'],
-        icon: <Code className="w-5 h-5 text-blue-400" />
-      },
-      {
-        keywords: ['meeting', 'minutes', 'presentation', 'deck'],
-        icon: <Presentation className="w-5 h-5 text-amber-600" />
-      }
-    ];
-  
-    // Find the first matching category
-    const matchedIcon = iconMap.find(item => 
-      item.keywords.some(keyword => normalizedCategory.includes(keyword))
-    );
-  
-    return matchedIcon?.icon || <Folder className="w-5 h-5 text-gray-400" />;
+    // Direct mapping of categories to their respective icons
+    const categoryIcons: Record<string, JSX.Element> = {
+      'Accounts Payable': <DollarSign className="w-5 h-5 text-green-600" />,
+      'Accounts Receivable': <DollarSign className="w-5 h-5 text-green-500" />,
+      'Cap Table': <Users className="w-5 h-5 text-indigo-600" />,
+      'Customer Contracts': <FileText className="w-5 h-5 text-blue-600" />,
+      'Financial Projections': <LineChart className="w-5 h-5 text-purple-600" />,
+      'Monthly Financials': <BarChart2 className="w-5 h-5 text-teal-600" />,
+      'Revenue By Customer': <PieChart className="w-5 h-5 text-pink-600" />,
+      'Stock Option Grants': <FileText className="w-5 h-5 text-amber-600" />,
+      'Vendor Contracts': <FileText className="w-5 h-5 text-orange-600" />,
+      'YTD Financials': <DollarSign className="w-5 h-5 text-emerald-600" />
+    };
+    
+    // Return the matching icon or default folder icon
+    return categoryIcons[normalizedCategory] || <Folder className="w-5 h-5 text-gray-400" />;
   };
 
   // Early return for no files

@@ -136,6 +136,56 @@ class DataRoomAPIService {
     return data;
   }
 
+  async uploadMultipleFiles(files: File[]): Promise<{ uploaded_files: APIFileResponse[] }> {
+    this.log('Uploading multiple files', { count: files.length });
+    const isHealthy = await this.checkHealth();
+    if (!isHealthy) {
+      throw new Error('Backend service is unavailable');
+    }
+
+    const formData = new FormData();
+    
+    // Append each file to the form data
+    files.forEach((file, index) => {
+      formData.append('files', file);
+    });
+    
+    try {
+      const response = await fetch(`${this.baseURL}/upload-multiple`, {
+        method: 'POST',
+        // Let the browser set the Content-Type with the boundary
+        headers: {
+          'accept': 'application/json'
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.log('Multiple files upload failed', { status: response.status, errorText }, true);
+        
+        if (response.status === 400) {
+          throw new Error('Invalid file type(s) or file(s) too large (max 10MB each)');
+        } else {
+          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+        }
+      }
+
+      const responseData = await response.json() as { uploaded_files: APIFileResponse[] };
+      this.log('Multiple files upload success', responseData);
+      
+      // Validate the response structure
+      if (!responseData.uploaded_files || !Array.isArray(responseData.uploaded_files)) {
+        throw new Error('Invalid response format: expected uploaded_files array');
+      }
+      
+      return responseData;
+    } catch (error) {
+      this.log('Error in uploadMultipleFiles', { error }, true);
+      throw error;
+    }
+  }
+
   async askQuestion(question: string): Promise<APIQuestionResponse> {
     this.log('Asking question', { question });
     const isHealthy = await this.checkHealth();
