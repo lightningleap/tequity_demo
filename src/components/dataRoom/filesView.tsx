@@ -617,7 +617,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                     </div>
 
                     {/* Category Assignment */}
-                    <div className="flex items-center space-x-2 text-sm">
+                    {/* <div className="flex items-center space-x-2 text-sm">
                       <Tag className="h-4 w-4 text-gray-400" />
                       <span className="text-gray-600">Category:</span>
                       <select
@@ -643,7 +643,7 @@ const FilesView: React.FC<FilesViewProps> = ({
                           Assign a category to improve organization
                         </span>
                       )}
-                    </div>
+                    </div> */}
 
                     {/* Metadata Display */}
                     {expandedMetadata[file.id] && file.metadata && (
