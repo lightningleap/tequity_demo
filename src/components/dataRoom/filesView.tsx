@@ -145,6 +145,48 @@ const FilesView: React.FC<FilesViewProps> = ({
     setRefreshingFiles(false);
   };
 
+  // Auto-refresh files after successful upload
+  const refreshFilesAfterUpload = async () => {
+    try {
+      console.log('FilesView: Refreshing files after upload...');
+      const backendFiles = await dataRoomAPI.getFiles();
+      console.log(`FilesView: Refreshed - found ${backendFiles.length} total files`);
+      
+      const uploadedFiles = backendFiles.map((apiFile: APIFileResponse) => ({
+        id: apiFile.file_id,
+        name: apiFile.file_name,
+        size: apiFile.file_size_bytes,
+        type: 'application/octet-stream',
+        uploadDate: new Date(apiFile.ingestion_timestamp),
+        category: apiFile.category,
+        metadata: {
+          file_id: apiFile.file_id,
+          original_name: apiFile.original_name,
+          safe_name: apiFile.safe_name,
+          num_records: apiFile.num_records,
+          num_sheets: apiFile.num_sheets,
+          point_ids: apiFile.point_ids,
+          category: apiFile.category,
+          processed_by_ai: true,
+          semantic_search_enabled: true,
+          ingestion_timestamp: apiFile.ingestion_timestamp,
+          download_url: apiFile.download_url,
+          last_accessed: apiFile.last_accessed,
+          status: apiFile.status,
+          file_size_bytes: apiFile.file_size_bytes,
+          points_count: apiFile.point_ids ? apiFile.point_ids.length : 0
+        },
+        fileId: apiFile.file_id,
+        aiProcessed: true
+      }));
+      
+      onFilesChange(uploadedFiles);
+      console.log(`FilesView: State updated with ${uploadedFiles.length} files after upload`);
+    } catch (error) {
+      console.error('FilesView: Failed to refresh files after upload:', error);
+    }
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -179,7 +221,7 @@ const FilesView: React.FC<FilesViewProps> = ({
 
   const showSuccessToast = (message: string) => {
     toast.success(message, {
-      position: 'top-right',
+      position: 'bottom-right',
       autoClose: 3000,
       hideProgressBar: false,
       closeOnClick: true,
@@ -208,58 +250,44 @@ const FilesView: React.FC<FilesViewProps> = ({
       console.log('FilesView: No files provided');
       return;
     }
-    
-    // Store the current files in a variable to avoid closure issues
-    const currentFiles = [...files];
 
     console.log(`FilesView: Starting upload of ${fileList.length} files...`);
     setIsLoading(true);
     
     try {
-      const files = Array.from(fileList);
-      setCurrentProcessingFile('Multiple files');
+      const filesToUpload = Array.from(fileList);
+      let uploadSuccessCount = 0;
       
-      // For single file, use the existing upload endpoint for backward compatibility
-      if (files.length === 1) {
-        const file = files[0];
+      // For single file, use the existing upload endpoint
+      if (filesToUpload.length === 1) {
+        const file = filesToUpload[0];
         setCurrentProcessingFile(file.name);
         
         try {
           console.log(`FilesView: Uploading single file ${file.name}...`);
           const apiResponse = await dataRoomAPI.uploadFile(file);
-          const uploadedFile = createUploadedFile(file, apiResponse);
-          
-          onFilesChange([uploadedFile]);
+          uploadSuccessCount = 1;
           showSuccessToast(`Uploaded ${file.name} successfully!`);
           console.log(`FilesView: Successfully uploaded ${file.name}`);
         } catch (error) {
           handleUploadError(file.name, error);
         }
       } else {
-        // For multiple files, use the new batch upload endpoint
-        console.log(`FilesView: Uploading ${files.length} files in batch...`);
+        // For multiple files, use the batch upload endpoint
+        setCurrentProcessingFile('Multiple files');
+        console.log(`FilesView: Uploading ${filesToUpload.length} files in batch...`);
         
         try {
-          const result = await dataRoomAPI.uploadMultipleFiles(files);
+          const result = await dataRoomAPI.uploadMultipleFiles(filesToUpload);
           
           if (!result || !result.uploaded_files || !Array.isArray(result.uploaded_files)) {
             console.error('Invalid response format from server:', result);
             throw new Error('Invalid response format from server: missing uploaded_files array');
           }
           
-          // Create uploaded files from the response
-          const uploadedFiles = result.uploaded_files.map((fileResponse, index) => {
-            if (!fileResponse || !fileResponse.file_id) {
-              console.error('Invalid file response at index', index, fileResponse);
-              throw new Error(`Invalid response for file ${files[index]?.name || 'unknown'}`);
-            }
-            return createUploadedFile(files[index], fileResponse);
-          });
-          
-          // Add the new files to the existing ones
-          onFilesChange([...currentFiles, ...uploadedFiles]);
-          showSuccessToast(`Successfully uploaded ${uploadedFiles.length} files!`);
-          console.log(`FilesView: Successfully uploaded ${uploadedFiles.length} files in batch. Total files:`, currentFiles.length + uploadedFiles.length);
+          uploadSuccessCount = result.uploaded_files.length;
+          showSuccessToast(`Successfully uploaded ${uploadSuccessCount} files!`);
+          console.log(`FilesView: Successfully uploaded ${uploadSuccessCount} files in batch`);
         } catch (error) {
           console.error('FilesView: Batch upload failed:', error);
           toast.error(
@@ -268,6 +296,13 @@ const FilesView: React.FC<FilesViewProps> = ({
           );
         }
       }
+
+      // Always refresh files from backend after any successful upload
+      if (uploadSuccessCount > 0) {
+        console.log(`FilesView: Upload completed successfully, refreshing files list...`);
+        await refreshFilesAfterUpload();
+      }
+      
     } catch (error) {
       console.error('FilesView: File upload failed:', error);
       toast.error('An unexpected error occurred during file upload');
@@ -330,13 +365,16 @@ const FilesView: React.FC<FilesViewProps> = ({
     
     try {
       await dataRoomAPI.deleteFile(fileToDelete.id);
-      onFilesChange(files.filter(file => file.id !== fileToDelete.id));
+      
+      // Refresh the files list from backend after deletion
+      console.log(`FilesView: File ${fileToDelete.id} deleted, refreshing files list...`);
+      await refreshFilesAfterUpload();
+      
       console.log(`FilesView: File ${fileToDelete.id} deleted successfully`);
       toast.success('File deleted successfully');
     } catch (error) {
       console.error('FilesView: Failed to delete file:', error);
       toast.error('Failed to delete file. Please try again.');
-      
     } finally {
       setFileToDelete(null);
     }
@@ -489,7 +527,6 @@ const FilesView: React.FC<FilesViewProps> = ({
                 ? 'Uploading and processing with AI...'
                 : 'Loading your files...'}
             </p>
-
           </div>
         )}
       </div>
@@ -515,24 +552,6 @@ const FilesView: React.FC<FilesViewProps> = ({
           </div>
         </div>
       )}
-
-         {/* Loading State */}
-         {/* {isLoading && (
-        <div className="text-center py-8">
-          <div className="max-w-md mx-auto w-full">
-            <div className="animate-pulse">
-              <div className="h-2 bg-blue-200 rounded-full"></div>
-            </div>
-          </div>
-          {currentProcessingFile && (
-            <p className="text-sm text-gray-600 mt-2">Processing: {currentProcessingFile}</p>
-          )}
-          <p className="text-sm text-gray-600 mt-2">
-            {currentProcessingFile ? 'Uploading and processing with AI...' : 'Loading files...'}
-          </p>
-        </div>
-      )} */}
-
 
       {/* Files List */}
       {files.length > 0 && (
@@ -616,35 +635,6 @@ const FilesView: React.FC<FilesViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Category Assignment */}
-                    {/* <div className="flex items-center space-x-2 text-sm">
-                      <Tag className="h-4 w-4 text-gray-400" />
-                      <span className="text-gray-600">Category:</span>
-                      <select
-                        value={file.category || ''}
-                        onChange={(e) => assignCategory(file.id, e.target.value)}
-                        disabled={isLoading}
-                        className={`text-xs border rounded px-2 py-1 ${
-                          !file.category || file.category === 'general' 
-                            ? 'border-orange-300 bg-orange-50 text-orange-800' 
-                            : 'border-green-300 bg-green-50 text-green-800'
-                        }`}
-                      >
-                        <option value="">Select Category</option>
-                        {availableCategories.map(category => (
-                          <option key={category} value={category}>
-                            {category.charAt(0).toUpperCase() + category.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                      
-                      {(!file.category || file.category === 'general') && (
-                        <span className="text-xs text-orange-600">
-                          Assign a category to improve organization
-                        </span>
-                      )}
-                    </div> */}
-
                     {/* Metadata Display */}
                     {expandedMetadata[file.id] && file.metadata && (
                       <div className="mt-3 p-3 bg-gray-50 rounded-lg border">
@@ -684,7 +674,6 @@ const FilesView: React.FC<FilesViewProps> = ({
         </div>
       )}
 
-   
       {/* Empty State */}
       {files.length === 0 && !isLoading && (
         <div className="text-center py-12">
