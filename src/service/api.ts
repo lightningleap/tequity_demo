@@ -44,6 +44,14 @@ export interface APIQuestionResponse {
   }>;
   answer: string;
   timestamp: string;
+  optimization_used: boolean;
+  sub_queries: string[];
+  sub_answers: Array<{
+    sub_query: string;
+    answer: string;
+    context_chunks: number;
+  }>;
+  files_searched: string[];
 }
 
 export interface APIHealthResponse {
@@ -194,6 +202,33 @@ class DataRoomAPIService {
     }
 
     const response = await fetch(`${this.baseURL}/question`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ question })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.log('Question failed', { status: response.status, errorText }, true);
+      throw new Error(`Question failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    this.log('Question answered', data);
+    return data;
+  }
+
+  async askQuestionOptimized(question: string): Promise<APIQuestionResponse> {
+    this.log('Asking question', { question });
+    const isHealthy = await this.checkHealth();
+    if (!isHealthy) {
+      throw new Error('Backend service is unavailable');
+    }
+
+    const response = await fetch(`${this.baseURL}/question-optimized`, {
       method: 'POST',
       headers: {
         accept: 'application/json',

@@ -17,7 +17,11 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
-  Clock
+  Clock,
+  Search,
+  Zap,
+  HelpCircle,
+  CheckCircle
 } from 'lucide-react'
 import { dataRoomAPI, APIQuestionResponse } from '../service/api'
 
@@ -41,6 +45,21 @@ interface DocumentResponse {
   }>
   category?: string
   timestamp?: string
+  sub_queries?: string[]
+  sub_answers?: Array<{
+    sub_query: string
+    answer: string
+    sources?: Array<{
+      file_id: string
+      file_name: string
+      download_url: string
+      category: string
+      chunk_point_id: string
+    }>
+    context_chunks?: number
+  }>
+  files_searched?: string[]
+  optimization_used?: boolean
 }
 
 interface ChatMessage {
@@ -75,6 +94,7 @@ const DocumentChatBot = () => {
   const [inputValue, setInputValue] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [expandedResponses, setExpandedResponses] = useState<Record<number, boolean>>({})
+  const [expandedSubQueries, setExpandedSubQueries] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -94,14 +114,18 @@ const DocumentChatBot = () => {
 
   const askQuestion = async (query: string): Promise<DocumentResponse | null> => {
     try {
-      const apiResponse: APIQuestionResponse = await dataRoomAPI.askQuestion(query)
+      const apiResponse: APIQuestionResponse = await dataRoomAPI.askQuestionOptimized(query)
       
       return {
         answer: apiResponse.answer,
         sources: apiResponse.sources,
         context: apiResponse.context,
         category: apiResponse.category,
-        timestamp: apiResponse.timestamp
+        timestamp: apiResponse.timestamp,
+        sub_queries: apiResponse.sub_queries,
+        sub_answers: apiResponse.sub_answers,
+        files_searched: apiResponse.files_searched,
+        optimization_used: apiResponse.optimization_used
       }
     } catch (error) {
       console.error('API request failed:', error)
@@ -180,6 +204,10 @@ const DocumentChatBot = () => {
 
     if (response.context && response.context.length > 0) {
       replies.push({ id: 'context', text: 'More details', action: 'show_context' })
+    }
+
+    if (response.sub_queries && response.sub_queries.length > 0) {
+      replies.push({ id: 'sub_queries', text: 'Show breakdown', action: 'show_sub_queries' })
     }
 
     if (response.category) {
@@ -271,6 +299,13 @@ const DocumentChatBot = () => {
     }))
   }
 
+  const toggleSubQueryExpansion = (key: string) => {
+    setExpandedSubQueries(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }))
+  }
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -290,10 +325,18 @@ const DocumentChatBot = () => {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center gap-2">
               <Database className="h-4 w-4 text-blue-600" />
-              Document Sources
-              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
-                AI Processed
-              </Badge>
+              Document Analysis
+              <div className="flex gap-1">
+                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                  AI Processed
+                </Badge>
+                {documentResponse.optimization_used && (
+                  <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 flex items-center gap-1">
+                    <Zap className="h-3 w-3" />
+                    Optimized
+                  </Badge>
+                )}
+              </div>
             </CardTitle>
             <Button
               variant="ghost"
@@ -307,25 +350,115 @@ const DocumentChatBot = () => {
         </CardHeader>
         
         {isExpanded && (
-          <CardContent className="pt-0 space-y-3">
-            {/* Category Information */}
-            {documentResponse.category && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-600">Category:</span>
-                <Badge variant="secondary" className="text-xs">
-                  {documentResponse.category}
-                </Badge>
+          <CardContent className="pt-0 space-y-4">
+            {/* Query Processing Info */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              {/* Category Information */}
+              {documentResponse.category && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600">Category:</span>
+                  <Badge variant="secondary" className="text-xs">
+                    {documentResponse.category}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Timestamp */}
+              {documentResponse.timestamp && (
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-gray-500" />
+                  <span className="text-gray-600">Processed:</span>
+                  <span className="font-medium text-xs">
+                    {new Date(documentResponse.timestamp).toLocaleString()}
+                  </span>
+                </div>
+              )}
+
+              {/* Files Searched */}
+              {documentResponse.files_searched && documentResponse.files_searched.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-gray-500" />
+                  <span className="text-gray-600">Files Searched:</span>
+                  <Badge variant="outline" className="text-xs">
+                    {documentResponse.files_searched.length}
+                  </Badge>
+                </div>
+              )}
+            </div>
+
+            {/* Files Searched Detail */}
+            {documentResponse.files_searched && documentResponse.files_searched.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">Searched Files</span>
+                <div className="bg-white p-3 rounded border">
+                  <div className="flex flex-wrap gap-2">
+                    {documentResponse.files_searched.map((fileName, index) => (
+                      <Badge key={index} variant="outline" className="text-xs">
+                        <FileText className="h-3 w-3 mr-1" />
+                        {fileName}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Timestamp */}
-            {documentResponse.timestamp && (
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4 text-gray-500" />
-                <span className="text-gray-600">Query Time:</span>
-                <span className="font-medium text-xs">
-                  {new Date(documentResponse.timestamp).toLocaleString()}
+            {/* Sub-Queries Analysis */}
+            {documentResponse.sub_queries && documentResponse.sub_queries.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4" />
+                  Query Breakdown ({documentResponse.sub_queries.length} parts)
                 </span>
+                {documentResponse.sub_queries.map((subQuery, index) => {
+                  const subQueryKey = `${message.id}-subquery-${index}`
+                  const isSubExpanded = expandedSubQueries[subQueryKey]
+                  const subAnswer = documentResponse.sub_answers?.find(sa => sa.sub_query === subQuery)
+                  
+                  return (
+                    <div key={index} className="bg-white rounded border">
+                      <div 
+                        className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={() => toggleSubQueryExpansion(subQueryKey)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs">
+                              Q{index + 1}
+                            </Badge>
+                            <span className="text-sm font-medium">{subQuery}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {subAnswer && (
+                              <Badge variant="outline" className="text-xs">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Answered
+                              </Badge>
+                            )}
+                            {isSubExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {isSubExpanded && subAnswer && (
+                        <div className="px-3 pb-3 border-t bg-gray-50">
+                          <div className="pt-3 space-y-2">
+                            <p className="text-sm text-gray-700">
+                              {subAnswer.answer.length > 300 
+                                ? `${subAnswer.answer.substring(0, 300)}...`
+                                : subAnswer.answer}
+                            </p>
+                            {subAnswer.context_chunks && (
+                              <div className="text-xs text-gray-500">
+                                Found in {subAnswer.context_chunks} context chunks
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
@@ -455,7 +588,14 @@ const DocumentChatBot = () => {
                         {formatTime(message.timestamp)}
                       </span>
                       {message.documentResponse && (
-                        <Badge variant="outline" className="text-xs">AI</Badge>
+                        <div className="flex gap-1">
+                          <Badge variant="outline" className="text-xs">AI</Badge>
+                          {message.documentResponse.optimization_used && (
+                            <Badge variant="outline" className="text-xs">
+                              <Zap className="h-3 w-3" />
+                            </Badge>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
