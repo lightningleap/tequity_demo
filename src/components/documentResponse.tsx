@@ -473,10 +473,10 @@ const DocumentChatBot = () => {
                         <FileText className="h-4 w-4 text-blue-600" />
                         <span className="font-medium text-sm">{source.file_name}</span>
                       </div>
-                      <Button variant="ghost" size="sm" className="h-6 px-2">
+                      {/* <Button variant="ghost" size="sm" className="h-6 px-2">
                         <ExternalLink className="h-3 w-3 mr-1" />
                         Open
-                      </Button>
+                      </Button> */}
                     </div>
                     {source.category && (
                       <Badge variant="outline" className="text-xs">
@@ -489,7 +489,7 @@ const DocumentChatBot = () => {
             )}
 
             {/* Context Details */}
-            {documentResponse.context && documentResponse.context.length > 0 && (
+            {/* {documentResponse.context && documentResponse.context.length > 0 && (
               <div className="space-y-2">
                 <span className="text-sm font-medium text-gray-700">Context Matches</span>
                 {documentResponse.context.slice(0, 3).map((contextItem, index) => (
@@ -532,7 +532,7 @@ const DocumentChatBot = () => {
                   </div>
                 )}
               </div>
-            )}
+            )} */}
           </CardContent>
         )}
       </Card>

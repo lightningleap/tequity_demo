@@ -5,7 +5,7 @@ import {
   Check, X, AlertCircle, Plus, Trash2, Download, Copy, MoreVertical, Filter,
   ArrowDownToLine, ArrowUpToLine, ArrowUpDown, ChevronsUpDown, ChevronUp, ChevronLeft,
   BarChart, PieChart, LineChart, BarChart2,
-  Settings, Shield, ShoppingBag, Package, Megaphone, Code, Presentation
+  Settings, Shield, ShoppingBag, Package, Megaphone, Code, Presentation, ExternalLink
 } from 'lucide-react';
 import { UploadedFile } from './filesView';
 import { dataRoomAPI } from '../../service/api';
@@ -109,7 +109,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
         num_records: metadata.num_records,
         num_sheets: metadata.num_sheets,
         file_size_bytes: metadata.file_size_bytes,
-        download_url: metadata.download_url,
+        // download_url: metadata.download_url,
         point_ids: metadata.point_ids,
         ingestion_timestamp: metadata.ingestion_timestamp,
         last_accessed: metadata.last_accessed,
@@ -158,226 +158,90 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
     }));
   };
 
-  // Enhanced value type detection
-  const getValueType = (value: any): { type: string; icon: React.ReactNode; color: string } => {
-    if (value === null || value === undefined) {
-      return { type: 'null', icon: <Hash className="w-3 h-3" />, color: 'text-gray-400' };
-    }
-
-    if (typeof value === 'boolean') {
-      return { type: 'boolean', icon: <Hash className="w-3 h-3" />, color: 'text-purple-600' };
-    }
-
-    if (typeof value === 'number') {
-      if (value > 1000000) {
-        return { type: 'currency', icon: <DollarSign className="w-3 h-3" />, color: 'text-green-600' };
-      }
-      if (value < 1 && value > 0) {
-        return { type: 'percentage', icon: <Percent className="w-3 h-3" />, color: 'text-blue-600' };
-      }
-      return { type: 'number', icon: <Hash className="w-3 h-3" />, color: 'text-blue-600' };
-    }
-
-    if (typeof value === 'string') {
-      if (value.match(/^\d{4}-\d{2}-\d{2}/)) {
-        return { type: 'date', icon: <Calendar className="w-3 h-3" />, color: 'text-orange-600' };
-      }
-      if (value.includes('@')) {
-        return { type: 'email', icon: <Users className="w-3 h-3" />, color: 'text-indigo-600' };
-      }
-      return { type: 'string', icon: <FileText className="w-3 h-3" />, color: 'text-gray-700' };
-    }
-
-    if (Array.isArray(value)) {
-      return { type: 'array', icon: <Hash className="w-3 h-3" />, color: 'text-red-600' };
-    }
-
-    if (typeof value === 'object') {
-      return { type: 'object', icon: <Folder className="w-3 h-3" />, color: 'text-blue-500' };
-    }
-
-    return { type: 'unknown', icon: <Hash className="w-3 h-3" />, color: 'text-gray-500' };
-  };
-
-  // Enhanced value formatting
-  const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return 'null';
-
-    if (typeof value === 'boolean') {
-      return value ? 'true' : 'false';
-    }
-
-    if (typeof value === 'number') {
-      if (value > 1000000) {
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0
-        }).format(value);
-      }
-      if (value < 1 && value > 0) {
-        return `${(value * 100).toFixed(1)}%`;
-      }
-      if (Number.isInteger(value)) {
-        return new Intl.NumberFormat('en-US').format(value);
-      }
-      return value.toFixed(2);
-    }
-
-    if (typeof value === 'string') {
-      return `"${value}"`;
-    }
-
-    return String(value);
-  };
-
-  // Enhanced metadata renderer with better performance
-  const renderMetadata = (metadata: any, path: string = '', level: number = 0): React.ReactNode => {
-    // Limit recursion depth to prevent performance issues
-    if (level > 5) {
-      return <span className="text-gray-400 text-xs">[Max depth reached]</span>;
-    }
-
-    if (metadata === null || metadata === undefined) {
-      const { icon, color } = getValueType(metadata);
+  // Simplified metadata renderer - only show specific fields
+  const renderSimplifiedMetadata = (metadata: any): React.ReactNode => {
+    if (!metadata || metadata.error) {
       return (
-        <div className="flex items-center space-x-1">
-          <span className={color}>{icon}</span>
-          <span className="text-gray-400 font-mono text-xs">null</span>
+        <div className="text-red-600 text-sm">
+          {metadata?.error || 'No metadata available'}
         </div>
       );
     }
 
-    // Handle arrays
-    if (Array.isArray(metadata)) {
-      if (metadata.length === 0) {
-        return (
-          <div className="flex items-center space-x-1">
-            <Hash className="w-3 h-3 text-red-600" />
-            <span className="text-gray-500 font-mono text-xs">[]</span>
-          </div>
-        );
-      }
+    const fields = [
+      { key: 'file_name', label: 'File Name', icon: <FileText className="w-4 h-4 text-blue-600" /> },
+      { key: 'category', label: 'Category', icon: <Folder className="w-4 h-4 text-purple-600" /> },
+      { key: 'num_records', label: 'Records', icon: <Hash className="w-4 h-4 text-green-600" /> },
+      { key: 'num_sheets', label: 'Sheets', icon: <FileText className="w-4 h-4 text-orange-600" /> },
+      // { key: 'download_url', label: 'Download URL', icon: <Download className="w-4 h-4 text-indigo-600" /> },
+      { key: 'point_ids', label: 'Point IDs', icon: <Hash className="w-4 h-4 text-red-600" /> }
+    ];
 
-      const arrayPath = `${path}_array`;
-      const isExpanded = expandedObjects[arrayPath];
+    return (
+      <div className="space-y-3">
+        {fields.map(({ key, label, icon }) => {
+          const value = metadata[key];
+          if (value === undefined || value === null) return null;
 
-      return (
-        <div className="space-y-1">
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => toggleObject(arrayPath)}
-              className="flex items-center space-x-1 hover:bg-gray-100 rounded px-1 py-0.5"
-            >
-              {isExpanded ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              <Hash className="w-3 h-3 text-red-600" />
-              <span className="text-xs font-medium text-gray-600">
-                Array ({metadata.length} items)
-              </span>
-            </button>
-          </div>
-
-          {isExpanded && (
-            <div className="ml-4 border-l-2 border-red-200 pl-3 space-y-2">
-              {metadata.slice(0, 5).map((item, index) => (
-                <div key={index} className="space-y-1">
-                  <div className="flex items-center space-x-1">
-                    <span className="text-xs font-mono text-gray-400">[{index}]</span>
-                  </div>
-                  <div className="ml-4">
-                    {renderMetadata(item, `${arrayPath}_${index}`, level + 1)}
-                  </div>
-                </div>
-              ))}
-              {metadata.length > 5 && (
-                <div className="text-xs text-gray-500 ml-4">
-                  ... and {metadata.length - 5} more items
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Handle objects
-    if (typeof metadata === 'object') {
-      const entries = Object.entries(metadata);
-      if (entries.length === 0) {
-        return (
-          <div className="flex items-center space-x-1">
-            <Folder className="w-3 h-3 text-blue-500" />
-            <span className="text-gray-500 font-mono text-xs">{'{}'}</span>
-          </div>
-        );
-      }
-
-      const objPath = `${path}_obj`;
-      const isExpanded = expandedObjects[objPath];
-
-      return (
-        <div className="space-y-1">
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => toggleObject(objPath)}
-              className="flex items-center space-x-1 hover:bg-gray-100 rounded px-1 py-0.5"
-            >
-              {isExpanded ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              <Folder className="w-3 h-3 text-blue-500" />
-              <span className="text-xs font-medium text-gray-600">
-                Object ({entries.length} properties)
-              </span>
-            </button>
-          </div>
-
-          {isExpanded && (
-            <div className="ml-4 border-l-2 border-blue-200 pl-3 space-y-2">
-              {entries.slice(0, 10).map(([key, value]) => {
-                const { icon, color } = getValueType(value);
-                const keyPath = `${objPath}_${key}`;
-
-                return (
-                  <div key={key} className="space-y-1">
-                    <div className="flex items-start space-x-2">
-                      <div className="flex items-center space-x-1 min-w-0">
-                        <span className={color}>{icon}</span>
-                        <span className="font-medium text-gray-800 text-xs">
-                          {key.replace(/_/g, ' ')}:
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        {(typeof value === 'object' && value !== null) || Array.isArray(value) ? (
-                          renderMetadata(value, keyPath, level + 1)
-                        ) : (
-                          <span className={`${color} font-mono text-xs break-all`}>
-                            {formatValue(value)}
-                          </span>
+          return (
+            <div key={key} className="flex items-start space-x-3">
+              <div className="flex items-center space-x-2 min-w-0 flex-1">
+                {icon}
+                <span className="font-medium text-gray-800 text-sm">{label}:</span>
+              </div>
+              <div className="flex-2 min-w-0">
+                {key === 'point_ids' && Array.isArray(value) ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-red-600 font-medium">
+                        Array ({value.length} items)
+                      </span>
+                      <button
+                        onClick={() => toggleObject(`pointIds_${metadata.file_id}`)}
+                        className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-600"
+                      >
+                        {expandedObjects[`pointIds_${metadata.file_id}`] ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    {expandedObjects[`pointIds_${metadata.file_id}`] && (
+                      <div className="mt-2 p-3 bg-gray-50 rounded border max-h-40 overflow-y-auto">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {value.slice(0, 20).map((pointId: string, index: number) => (
+                            <div key={index} className="text-xs font-mono text-gray-600 bg-white px-2 py-1 rounded">
+                              {pointId}
+                            </div>
+                          ))}
+                        </div>
+                        {value.length > 20 && (
+                          <div className="text-xs text-gray-500 mt-2 text-center">
+                            ... and {value.length - 20} more items
+                          </div>
                         )}
                       </div>
-                    </div>
+                    )}
                   </div>
-                );
-              })}
-              {entries.length > 10 && (
-                <div className="text-xs text-gray-500">
-                  ... and {entries.length - 10} more properties
-                </div>
-              )}
+                ) : key === 'download_url' ? (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-mono text-indigo-600 break-all">
+                      {value}
+                    </span>
+                    <button
+                      onClick={() => window.open(value, '_blank')}
+                      className="text-xs px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 rounded text-indigo-700 flex items-center space-x-1"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Open</span>
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-sm font-mono text-gray-700">
+                    {typeof value === 'string' ? `"${value}"` : value?.toString() || 'N/A'}
+                  </span>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      );
-    }
-
-    // Handle primitive values
-    const { icon, color } = getValueType(metadata);
-    return (
-      <div className="flex items-center space-x-1">
-        <span className={color}>{icon}</span>
-        <span className={`${color} font-mono text-xs`}>
-          {formatValue(metadata)}
-        </span>
+          );
+        })}
       </div>
     );
   };
@@ -624,56 +488,13 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                           </div>
                         )}
 
-                        {/* Fetched metadata display */}
+                        {/* Simplified metadata display */}
                         {metadata && !isLoadingMeta && (
                           <div className="pl-6 border-t border-gray-200 pt-3">
-                            <div className="text-sm font-medium text-gray-700 mb-2">
-                              Detailed Metadata:
+                            <div className="text-sm font-medium text-gray-700 mb-3">
+                              Key Metadata:
                             </div>
-                            {metadata.error ? (
-                              <div className="text-red-600 text-sm">
-                                Error loading metadata: {metadata.error}
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                {/* Basic file info */}
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <span className="font-medium text-gray-600">Backend File ID:</span>
-                                    <span className="ml-2 font-mono text-blue-600">{metadata.file_id}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-600">Status:</span>
-                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs ${metadata.status === 'active'
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-yellow-100 text-yellow-800'
-                                      }`}>
-                                      {metadata.processing_status}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Processing details */}
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <span className="font-medium text-gray-600">Processed:</span>
-                                    <span className="ml-2">{metadata.ingestion_date}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-600">Last Accessed:</span>
-                                    <span className="ml-2">{metadata.last_accessed_date}</span>
-                                  </div>
-                                </div>
-
-                                {/* Full metadata object */}
-                                <div className="mt-3">
-                                  <div className="text-sm font-medium text-gray-600 mb-2">
-                                    Complete Metadata Structure:
-                                  </div>
-                                  {renderMetadata(metadata, `${category}-${file.id}`)}
-                                </div>
-                              </div>
-                            )}
+                            {renderSimplifiedMetadata(metadata)}
                           </div>
                         )}
                       </div>
