@@ -110,7 +110,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
         num_sheets: metadata.num_sheets,
         file_size_bytes: metadata.file_size_bytes,
         // download_url: metadata.download_url,
-        point_ids: metadata.point_ids,
+        // point_ids: metadata.point_ids,
         ingestion_timestamp: metadata.ingestion_timestamp,
         last_accessed: metadata.last_accessed,
         status: metadata.status,
@@ -174,7 +174,7 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       { key: 'num_records', label: 'Records', icon: <Hash className="w-4 h-4 text-green-600" /> },
       { key: 'num_sheets', label: 'Sheets', icon: <FileText className="w-4 h-4 text-orange-600" /> },
       // { key: 'download_url', label: 'Download URL', icon: <Download className="w-4 h-4 text-indigo-600" /> },
-      { key: 'point_ids', label: 'Point IDs', icon: <Hash className="w-4 h-4 text-red-600" /> }
+      // { key: 'point_ids', label: 'Point IDs', icon: <Hash className="w-4 h-4 text-red-600" /> }
     ];
 
     return (
