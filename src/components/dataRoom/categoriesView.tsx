@@ -99,32 +99,18 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       console.log(`CategoriesView: Fetching metadata for file ${fileId}`);
       const metadata = await dataRoomAPI.getFileMetadata(fileId);
 
-      // Extract detailed metadata from the API response
-      const enrichedMetadata = {
-        file_id: metadata.file_id,
-        file_name: metadata.file_name,
-        original_name: metadata.original_name,
-        safe_name: metadata.safe_name,
-        category: metadata.category,
-        num_records: metadata.num_records,
-        num_sheets: metadata.num_sheets,
-        file_size_bytes: metadata.file_size_bytes,
-        // download_url: metadata.download_url,
-        // point_ids: metadata.point_ids,
-        ingestion_timestamp: metadata.ingestion_timestamp,
-        last_accessed: metadata.last_accessed,
-        status: metadata.status,
-        // Additional computed fields
-        file_size_formatted: formatFileSize(metadata.file_size_bytes),
-        ingestion_date: new Date(metadata.ingestion_timestamp).toLocaleDateString(),
-        last_accessed_date: metadata.last_accessed ? new Date(metadata.last_accessed).toLocaleDateString() : 'Never',
-        points_count: metadata.point_ids ? metadata.point_ids.length : 0,
-        processing_status: metadata.status === 'active' ? 'Active' : metadata.status,
-        searchable: metadata.point_ids && metadata.point_ids.length > 0
-      };
-
-      setFileMetadata(prev => ({ ...prev, [fileId]: enrichedMetadata }));
-      console.log(`CategoriesView: Metadata loaded for ${fileId}:`, enrichedMetadata);
+      // Store the complete metadata response
+      setFileMetadata(prev => ({ 
+        ...prev, 
+        [fileId]: {
+          ...metadata,
+          // Add computed fields for display
+          file_size_formatted: formatFileSize(metadata.file_size_bytes || 0),
+          ingestion_date: metadata.ingestion_timestamp ? new Date(metadata.ingestion_timestamp).toLocaleDateString() : 'N/A',
+          last_accessed_date: metadata.last_accessed ? new Date(metadata.last_accessed).toLocaleDateString() : 'Never'
+        }
+      }));
+      console.log(`CategoriesView: Metadata loaded for ${fileId}:`, metadata);
     } catch (error) {
       console.error(`CategoriesView: Failed to fetch metadata for file ${fileId}:`, error);
       setFileMetadata(prev => ({ ...prev, [fileId]: { error: 'Failed to load metadata' } }));
@@ -158,8 +144,239 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
     }));
   };
 
-  // Simplified metadata renderer - only show specific fields
-  const renderSimplifiedMetadata = (metadata: any): React.ReactNode => {
+  // Helper function to get a meaningful preview of an object
+  const getObjectPreview = (obj: any): string => {
+    if (!obj || typeof obj !== 'object') return '';
+    
+    // Common fields that might give meaningful context
+    const meaningfulFields = ['name', 'vendor_name', 'customer_name', 'title', 'description', 'type', 'id'];
+    
+    for (const field of meaningfulFields) {
+      if (obj[field] && typeof obj[field] === 'string') {
+        return obj[field];
+      }
+    }
+    
+    // If no meaningful field found, try to get the first string value
+    const firstStringValue = Object.values(obj).find(v => typeof v === 'string' && String(v).length < 50);
+    return firstStringValue ? String(firstStringValue) : '';
+  };
+
+  // Get user-friendly label for arrays based on context
+  const getArrayLabel = (key: string, length: number): string => {
+    const keyLower = key.toLowerCase();
+    
+    // Map common field names to user-friendly labels
+    const labelMappings: Record<string, string> = {
+      'vendors': 'vendors',
+      'customers': 'customers',
+      'employees': 'employees',
+      'transactions': 'transactions',
+      'invoices': 'invoices',
+      'contracts': 'contracts',
+      'payments': 'payments',
+      'aging_buckets': 'aging buckets',
+      'buckets': 'buckets',
+      'categories': 'categories',
+      'items': 'items',
+      'records': 'records',
+      'entries': 'entries',
+      'data': 'data points',
+    };
+
+    // Check if key contains any of our known patterns
+    for (const [pattern, label] of Object.entries(labelMappings)) {
+      if (keyLower.includes(pattern)) {
+        return `${length} ${label}`;
+      }
+    }
+
+    // Default fallback
+    return `${length} items`;
+  };
+
+  // Recursive function to render any type of data structure
+  const renderDataValue = (value: any, key: string, path: string, depth: number = 0): React.ReactNode => {
+    const maxDepth = 5; // Prevent infinite recursion
+    if (depth > maxDepth) {
+      return <span className="text-red-500 text-xs">Max depth reached</span>;
+    }
+
+    if (value === null) {
+      return <span className="text-gray-400 italic">null</span>;
+    }
+
+    if (value === undefined) {
+      return <span className="text-gray-400 italic">undefined</span>;
+    }
+
+    if (typeof value === 'string') {
+      // Handle URLs
+      if (value.startsWith('http://') || value.startsWith('https://')) {
+        return (
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-mono text-indigo-600 break-all">{value}</span>
+            <button
+              onClick={() => window.open(value, '_blank')}
+              className="text-xs px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 rounded text-indigo-700 flex items-center space-x-1"
+            >
+              <ExternalLink className="w-3 h-3" />
+              <span>Open</span>
+            </button>
+          </div>
+        );
+      }
+      return <span className="text-sm font-mono text-gray-700">"{value}"</span>;
+    }
+
+    if (typeof value === 'number') {
+      // Format numbers nicely
+      const formattedNumber = typeof value === 'number' && value > 1000 
+        ? value.toLocaleString() 
+        : value.toString();
+      return <span className="text-sm font-mono text-blue-600">{formattedNumber}</span>;
+    }
+
+    if (typeof value === 'boolean') {
+      return <span className={`text-sm font-mono ${value ? 'text-green-600' : 'text-red-600'}`}>{value.toString()}</span>;
+    }
+
+    if (Array.isArray(value)) {
+      const expandKey = `${path}_${key}_array`;
+      const isExpanded = expandedObjects[expandKey];
+      const userFriendlyLabel = getArrayLabel(key, value.length);
+      
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-purple-600 font-medium">
+              {userFriendlyLabel}
+            </span>
+            {value.length > 0 && (
+              <button
+                onClick={() => toggleObject(expandKey)}
+                className="text-xs px-2 py-0.5 bg-purple-100 hover:bg-purple-200 rounded text-purple-700"
+              >
+                {isExpanded ? 'Hide' : 'Show'}
+              </button>
+            )}
+          </div>
+          {isExpanded && value.length > 0 && (
+            <div className="mt-2 p-3 bg-purple-50 rounded border max-h-60 overflow-y-auto">
+              <div className="space-y-2">
+                {value.slice(0, 50).map((item, index) => {
+                  // For objects in arrays, show a preview
+                  if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+                    const preview = getObjectPreview(item);
+                    return (
+                      <div key={index} className="flex items-start space-x-2">
+                        <span className="text-xs text-purple-500 font-mono min-w-[2rem]">[{index + 1}]:</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            {preview && (
+                              <span className="text-xs text-gray-600 font-medium">"{preview}"</span>
+                            )}
+                            <button
+                              onClick={() => toggleObject(`${path}_${key}_${index}_item`)}
+                              className="text-xs px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-600"
+                            >
+                              {expandedObjects[`${path}_${key}_${index}_item`] ? 'Hide Details' : 'Show Details'}
+                            </button>
+                          </div>
+                          {expandedObjects[`${path}_${key}_${index}_item`] && (
+                            <div className="pl-3 border-l-2 border-purple-200">
+                              {renderDataValue(item, index.toString(), `${path}_${key}_${index}`, depth + 1)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={index} className="flex items-start space-x-2">
+                        <span className="text-xs text-purple-500 font-mono min-w-[2rem]">[{index + 1}]:</span>
+                        <div className="flex-1 min-w-0">
+                          {renderDataValue(item, index.toString(), `${path}_${key}_${index}`, depth + 1)}
+                        </div>
+                      </div>
+                    );
+                  }
+                })}
+                {value.length > 50 && (
+                  <div className="text-xs text-purple-500 text-center py-2 border-t border-purple-200">
+                    ... and {value.length - 50} more items
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (typeof value === 'object') {
+      const entries = Object.entries(value);
+      const expandKey = `${path}_${key}_object`;
+      const isExpanded = expandedObjects[expandKey];
+      const preview = getObjectPreview(value);
+
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            {preview && (
+              <span className="text-sm text-gray-700 font-medium">"{preview}"</span>
+            )}
+            {entries.length > 0 && (
+              <button
+                onClick={() => toggleObject(expandKey)}
+                className="text-xs px-2 py-0.5 bg-orange-100 hover:bg-orange-200 rounded text-orange-700"
+              >
+                {isExpanded ? 'Hide Details' : 'Show Details'}
+              </button>
+            )}
+            <span className="text-xs text-gray-500">({entries.length} fields)</span>
+          </div>
+          {isExpanded && entries.length > 0 && (
+            <div className="mt-2 p-3 bg-orange-50 rounded border max-h-60 overflow-y-auto">
+              <div className="space-y-3">
+                {entries.slice(0, 20).map(([objKey, objValue]) => (
+                  <div key={objKey} className="border-b border-orange-200 pb-2 last:border-b-0">
+                    <div className="flex items-start space-x-3">
+                      <span className="text-xs font-medium text-orange-700 min-w-0 break-all">
+                        {objKey}:
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        {renderDataValue(objValue, objKey, `${path}_${key}_${objKey}`, depth + 1)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {entries.length > 20 && (
+                  <div className="text-xs text-orange-500 text-center py-2 border-t border-orange-200">
+                    ... and {entries.length - 20} more fields
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return <span className="text-sm text-gray-500">{String(value)}</span>;
+  };
+
+  // Helper function to determine if a metadata value should be hidden
+  const shouldHideValue = (value: any): boolean => {
+    if (value === null || value === undefined) return true;
+    if (Array.isArray(value) && value.length === 0) return true;
+    if (typeof value === 'object' && Object.keys(value).length === 0) return true;
+    if (typeof value === 'string' && value.trim() === '') return true;
+    return false;
+  };
+
+  // Render category metadata with proper structure
+  const renderCategoryMetadata = (metadata: any): React.ReactNode => {
     if (!metadata || metadata.error) {
       return (
         <div className="text-red-600 text-sm">
@@ -168,80 +385,93 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
       );
     }
 
-    const fields = [
-      { key: 'file_name', label: 'File Name', icon: <FileText className="w-4 h-4 text-blue-600" /> },
-      { key: 'category', label: 'Category', icon: <Folder className="w-4 h-4 text-purple-600" /> },
-      { key: 'num_records', label: 'Records', icon: <Hash className="w-4 h-4 text-green-600" /> },
-      { key: 'num_sheets', label: 'Sheets', icon: <FileText className="w-4 h-4 text-orange-600" /> },
-      // { key: 'download_url', label: 'Download URL', icon: <Download className="w-4 h-4 text-indigo-600" /> },
-      // { key: 'point_ids', label: 'Point IDs', icon: <Hash className="w-4 h-4 text-red-600" /> }
+    const categoryMetadata = metadata.category_metadata;
+
+    if (!categoryMetadata) {
+      return (
+        <div className="text-gray-500 text-sm italic">
+          No category metadata available
+        </div>
+      );
+    }
+
+    // Keys to hide from category metadata since they're already shown in file info
+    const hiddenKeys = [
+      'file_path',
+      'file_name', 
+      'category',
+      'extraction_timestamp',
+      'file_size_bytes'
     ];
 
-    return (
-      <div className="space-y-3">
-        {fields.map(({ key, label, icon }) => {
-          const value = metadata[key];
-          if (value === undefined || value === null) return null;
+    // Show basic file info first
+    const basicInfo = [
+      { key: 'file_name', label: 'File Name', value: metadata.file_name },
+      { key: 'category', label: 'Category', value: metadata.category },
+      { key: 'file_size_formatted', label: 'File Size', value: metadata.file_size_formatted },
+      { key: 'ingestion_date', label: 'Ingested', value: metadata.ingestion_date },
+    ].filter(item => item.value);
 
-          return (
-            <div key={key} className="flex items-start space-x-3">
-              <div className="flex items-center space-x-2 min-w-0 flex-1">
-                {icon}
-                <span className="font-medium text-gray-800 text-sm">{label}:</span>
-              </div>
-              <div className="flex-2 min-w-0">
-                {key === 'point_ids' && Array.isArray(value) ? (
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm text-red-600 font-medium">
-                        Array ({value.length} items)
-                      </span>
-                      <button
-                        onClick={() => toggleObject(`pointIds_${metadata.file_id}`)}
-                        className="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-600"
-                      >
-                        {expandedObjects[`pointIds_${metadata.file_id}`] ? 'Hide' : 'Show'}
-                      </button>
-                    </div>
-                    {expandedObjects[`pointIds_${metadata.file_id}`] && (
-                      <div className="mt-2 p-3 bg-gray-50 rounded border max-h-40 overflow-y-auto">
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                          {value.slice(0, 20).map((pointId: string, index: number) => (
-                            <div key={index} className="text-xs font-mono text-gray-600 bg-white px-2 py-1 rounded">
-                              {pointId}
-                            </div>
-                          ))}
-                        </div>
-                        {value.length > 20 && (
-                          <div className="text-xs text-gray-500 mt-2 text-center">
-                            ... and {value.length - 20} more items
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : key === 'download_url' ? (
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-mono text-indigo-600 break-all">
-                      {value}
-                    </span>
-                    <button
-                      onClick={() => window.open(value, '_blank')}
-                      className="text-xs px-2 py-0.5 bg-indigo-100 hover:bg-indigo-200 rounded text-indigo-700 flex items-center space-x-1"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Open</span>
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-sm font-mono text-gray-700">
-                    {typeof value === 'string' ? `"${value}"` : value?.toString() || 'N/A'}
-                  </span>
-                )}
-              </div>
+    return (
+      <div className="space-y-4">
+        {/* Basic File Information */}
+        {basicInfo.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-semibold text-gray-800 border-b border-gray-200 pb-1">
+              File Information
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {basicInfo.map(({ key, label, value }) => (
+                <div key={key} className="flex items-center space-x-2">
+                  <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span className="font-medium text-gray-800 text-sm">{label}:</span>
+                  <span className="text-sm text-gray-700">{value}</span>
+                </div>
+              ))}
             </div>
-          );
-        })}
+          </div>
+        )}
+
+        {/* Category Metadata */}
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-gray-800 border-b border-gray-200 pb-1">
+            Category Metadata
+          </h4>
+          <div className="space-y-3">
+            {typeof categoryMetadata === 'object' && !Array.isArray(categoryMetadata) ? (
+              Object.entries(categoryMetadata)
+                .filter(([key]) => !hiddenKeys.includes(key)) // Filter out general keys
+                .map(([key, value]) => (
+                  <div key={key} className="bg-gray-50 p-3 rounded border">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex items-center space-x-2 min-w-0 flex-1">
+                        <Hash className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                        <span className="font-medium text-gray-800 text-sm break-all">{key}:</span>
+                      </div>
+                      <div className="flex-2 min-w-0">
+                        {renderDataValue(value, key, `categoryMeta_${metadata.file_id}`)}
+                      </div>
+                    </div>
+                  </div>
+                ))
+            ) : (
+              <div className="bg-gray-50 p-3 rounded border">
+                {renderDataValue(categoryMetadata, 'root', `categoryMeta_${metadata.file_id}`)}
+              </div>
+            )}
+            
+            {/* Show message if no meaningful metadata after filtering */}
+            {typeof categoryMetadata === 'object' && 
+             !Array.isArray(categoryMetadata) && 
+             Object.entries(categoryMetadata).filter(([key, value]) => 
+               !hiddenKeys.includes(key) && !shouldHideValue(value)
+             ).length === 0 && (
+              <div className="text-gray-500 text-sm italic text-center py-4">
+                No additional category-specific metadata available
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -488,13 +718,10 @@ const CategoriesView: React.FC<CategoriesViewProps> = ({ files }) => {
                           </div>
                         )}
 
-                        {/* Simplified metadata display */}
+                        {/* Category metadata display */}
                         {metadata && !isLoadingMeta && (
                           <div className="pl-6 border-t border-gray-200 pt-3">
-                            <div className="text-sm font-medium text-gray-700 mb-3">
-                              Key Metadata:
-                            </div>
-                            {renderSimplifiedMetadata(metadata)}
+                            {renderCategoryMetadata(metadata)}
                           </div>
                         )}
                       </div>
