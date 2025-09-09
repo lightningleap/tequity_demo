@@ -38,6 +38,7 @@ const FilesView: React.FC<FilesViewProps> = ({
   const [refreshingFiles, setRefreshingFiles] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<{id: string, name: string} | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
 
   const loaderMessages = [
     {
@@ -380,9 +381,24 @@ const FilesView: React.FC<FilesViewProps> = ({
     }
   };
 
-  const assignCategory = (fileId: string, category: string) => {
-    onFileUpdate(fileId, { category });
-    console.log(`FilesView: Updated file ${fileId} category to ${category}`);
+  const assignCategory = async (fileId: string, category: string) => {
+    setIsUpdatingCategory(true);
+    try {
+      // Make API call to update category
+      await dataRoomAPI.updateFileCategory(fileId, category);
+      
+      // Update local state after successful API call
+      onFileUpdate(fileId, { category });
+      console.log(`FilesView: Updated file ${fileId} category to ${category}`);
+      
+      // Show success toast
+      toast.success('Category updated successfully');
+    } catch (error) {
+      console.error('FilesView: Failed to update category:', error);
+      toast.error('Failed to update category. Please try again.');
+    } finally {
+      setIsUpdatingCategory(false);
+    }
   };
 
   const toggleMetadata = (fileId: string) => {
@@ -586,11 +602,11 @@ const FilesView: React.FC<FilesViewProps> = ({
                           <p className="text-sm text-gray-500">
                             {formatFileSize(file.size)} • {file.type}
                           </p>
-                          {file.category && (
+                          {/* {file.category && (
                             <p className="text-xs text-blue-600 mt-1">
                               {file.category}
                             </p>
-                          )}
+                          )} */}
                           <div className="flex items-center space-x-2 text-xs text-gray-400 mt-1">
                             <span>Uploaded: {file.uploadDate.toLocaleDateString()}</span>
                             {file.aiProcessed && (
@@ -609,13 +625,31 @@ const FilesView: React.FC<FilesViewProps> = ({
                         </div>
                       </div>
                       <div className="flex space-x-2">
-                        <button
-                          onClick={() => toggleMetadata(file.id)}
-                          className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="View metadata"
-                        >
-                          <Eye className="h-5 w-5" />
-                        </button>
+                       
+                        <div className="relative">
+                          <select
+                            value={file.category || ''}
+                            onChange={(e) => assignCategory(file.id, e.target.value)}
+                            className="p-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={isUpdatingCategory}
+                          >
+                            <option value="">Select Category</option>
+                            {availableCategories.map((category) => (
+                              <option key={category} value={category}>
+                                {category.charAt(0).toUpperCase() + category.slice(1)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="relative">
+                          <button
+                            onClick={() => toggleMetadata(file.id)}
+                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="View metadata"
+                          >
+                            <Eye className="h-5 w-5" />
+                          </button>
+                        </div>
                         <button
                           onClick={() => downloadFile(file)}
                           className="p-2 text-gray-400 hover:text-green-600 transition-colors"

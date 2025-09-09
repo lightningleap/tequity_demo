@@ -382,6 +382,33 @@ class DataRoomAPIService {
     this.log('File deleted', data);
     return data;
   }
+
+  async updateFileCategory(fileId: string, category: string): Promise<APIFileResponse> {
+    this.log('Updating file category', { fileId, category });
+    const isHealthy = await this.checkHealth();
+    if (!isHealthy) {
+      throw new Error('Backend service is unavailable');
+    }
+
+    const response = await fetch(`${this.baseURL}/file/${fileId}/category`, {
+      method: 'PATCH',
+      headers: { 
+        'Content-Type': 'application/json',
+        'accept': 'application/json'
+      },
+      body: JSON.stringify({ category })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      this.log('Update category failed', { status: response.status, errorText }, true);
+      throw new Error(`Update category failed: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    this.log('Category updated', data);
+    return data;
+  }
 }
 
 export const dataRoomAPI = new DataRoomAPIService();
