@@ -5,7 +5,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { 
   Send, 
   Bot,
@@ -23,13 +22,7 @@ import {
   Zap,
   HelpCircle,
   CheckCircle,
-  Play,
-  Pause,
-  RefreshCw,
   Activity,
-  Target,
-  Brain,
-  FileSearch,
   MessageSquare
 } from 'lucide-react'
 
@@ -184,7 +177,6 @@ const DocumentChatBot = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [expandedResponses, setExpandedResponses] = useState<Record<number, boolean>>({})
   const [expandedSubQueries, setExpandedSubQueries] = useState<Record<string, boolean>>({})
-  const [expandedProcessing, setExpandedProcessing] = useState<Record<number, boolean>>({})
   const messagesEndRef = useRef(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -196,16 +188,6 @@ const DocumentChatBot = () => {
     scrollToBottom()
   }, [messages])
 
-  useEffect(() => {
-    const streamingMessage = messages.find(msg => msg.isStreaming)
-    if (streamingMessage) {
-      setExpandedProcessing(prev => ({
-        ...prev,
-        [streamingMessage.id]: true // Set to true by default for streaming messages
-      }))
-    }
-  }, [messages])
-
   const formatTime = (timestamp: Date) => {
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
@@ -215,25 +197,6 @@ const DocumentChatBot = () => {
 
   const generateSessionId = () => {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
-
-  const getStepIcon = (step: string) => {
-    switch (step) {
-      case 'initialization': return <Play className="h-4 w-4" />
-      case 'metadata_loading': return <FileText className="h-4 w-4" />
-      case 'query_decomposition': return <Brain className="h-4 w-4" />
-      case 'relevance_analysis': return <Target className="h-4 w-4" />
-      case 'vector_search': return <Search className="h-4 w-4" />
-      case 'answer_generation': return <MessageSquare className="h-4 w-4" />
-      case 'finalization': return <CheckCircle className="h-4 w-4" />
-      default: return <Activity className="h-4 w-4" />
-    }
-  }
-
-  const getStepProgress = (steps: ProcessingStep[]) => {
-    const totalSteps = ['initialization', 'metadata_loading', 'query_decomposition', 'relevance_analysis', 'vector_search', 'answer_generation', 'finalization']
-    const completedSteps = steps.filter(step => step.status === 'completed').length
-    return Math.round((completedSteps / totalSteps.length) * 100)
   }
 
   const cleanupEventSource = () => {
@@ -338,7 +301,7 @@ const DocumentChatBot = () => {
                   if (msg.id === streamingMessage.id) {
                     return {
                       ...msg,
-                      content: `Processing: ${data.message}`
+                      content: `Processing: ${data.message}...`
                     }
                   }
                   return msg
@@ -359,8 +322,57 @@ const DocumentChatBot = () => {
                   }))
                 });
 
+                // Create a comprehensive final answer
+                const constructFinalAnswer = () => {
+                  // If we have a final_answer, use it
+                  if (data.final_result.final_answer && data.final_result.final_answer.trim() && 
+                      data.final_result.final_answer !== 'Processing completed') {
+                    return data.final_result.final_answer;
+                  }
+
+                  // Otherwise, construct from sub-query results
+                  if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
+                    const hasRelevantData = data.final_result.sub_query_results.some(result => 
+                      result.context_chunks && result.context_chunks.length > 0
+                    );
+
+                    if (hasRelevantData) {
+                      let constructedAnswer = "Based on the analysis of your documents:\n\n";
+                      
+                      data.final_result.sub_query_results.forEach((result, index) => {
+                        if (result.context_chunks && result.context_chunks.length > 0) {
+                          const relevantChunks = result.context_chunks.filter(chunk => 
+                            chunk.relevance_type === 'category_match' || chunk.text.length > 20
+                          );
+                          
+                          if (relevantChunks.length > 0) {
+                            constructedAnswer += `**${result.sub_query}**\n`;
+                            
+                            // Add key insights from the chunks
+                            const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file));
+                            constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`;
+                            
+                            relevantChunks.slice(0, 3).forEach(chunk => {
+                              const preview = chunk.text.length > 150 ? 
+                                chunk.text.substring(0, 150) + "..." : chunk.text;
+                              constructedAnswer += `• ${preview}\n`;
+                            });
+                            constructedAnswer += "\n";
+                          }
+                        }
+                      });
+
+                      return constructedAnswer.trim();
+                    } else {
+                      return "I searched through your documents but couldn't find specific information matching your query. You may want to try rephrasing your question or check if the relevant documents are uploaded.";
+                    }
+                  }
+
+                  return "Analysis completed. Please expand the results section below for detailed findings.";
+                };
+
                 const documentResponse: DocumentResponse = {
-                  answer: data.final_result.final_answer || 'Processing completed',
+                  answer: constructFinalAnswer(),
                   sources: data.final_result.sources?.map(source => ({
                     file_id: source.file_id,
                     file_name: source.file_name,
@@ -542,13 +554,6 @@ const DocumentChatBot = () => {
     }))
   }
 
-  const toggleProcessingExpansion = (messageId: number) => {
-    setExpandedProcessing(prev => ({
-      ...prev,
-      [messageId]: !prev[messageId]
-    }))
-  }
-
   const toggleSubQueryExpansion = (key: string) => {
     setExpandedSubQueries(prev => ({
       ...prev,
@@ -573,93 +578,43 @@ const DocumentChatBot = () => {
   const renderProcessingSteps = (message: ChatMessage) => {
     if (!message.processingSteps || message.processingSteps.length === 0) return null
 
-    const steps = message.processingSteps
-    const progress = getStepProgress(steps)
-    const isExpanded = expandedProcessing[message.id]
+    // Get the latest step that's currently running or most recent
+    const latestStep = message.processingSteps[message.processingSteps.length - 1]
+    if (!latestStep) return null
+
+    // Format the step name for display
+    const formatStepName = (step: string) => {
+      switch (step) {
+        case 'initialization': return 'Initializing AI analysis'
+        case 'metadata_loading': return 'Loading document metadata'
+        case 'query_decomposition': return 'Breaking down your question'
+        case 'relevance_analysis': return 'Analyzing document relevance'
+        case 'vector_search': return 'Searching through documents'
+        case 'answer_generation': return 'Generating comprehensive answer'
+        case 'finalization': return 'Finalizing results'
+        default: return step.replace('_', ' ')
+      }
+    }
 
     return (
-      <Card className="mt-3 bg-blue-50 border-blue-200">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Activity className="h-4 w-4 text-blue-600 animate-pulse" />
-              Live Processing
-              <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
-                {progress}% Complete
-              </Badge>
-            </CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => toggleProcessingExpansion(message.id)}
-              className="h-6 w-6 p-0"
-            >
-              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            </Button>
+      <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+            <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+            <div className="w-1 h-1 bg-blue-300 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
           </div>
-          <Progress value={progress} className="h-2 mt-2" />
-        </CardHeader>
-        
-        {isExpanded && (
-          <CardContent className="pt-0 space-y-3">
-            {steps.map((step, index) => (
-              <div key={`${step.step}-${step.status}-${index}`} className="flex items-start gap-3">
-                <div className={`flex-shrink-0 ${step.status === 'completed' ? 'text-green-600' : step.status === 'failed' ? 'text-red-600' : 'text-blue-600'}`}>
-                  {getStepIcon(step.step)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium capitalize">
-                      {step.step.replace('_', ' ')}
-                    </span>
-                    <Badge 
-                      variant={step.status === 'completed' ? 'default' : step.status === 'failed' ? 'destructive' : 'secondary'}
-                      className="text-xs"
-                    >
-                      {step.status}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-1">{step.message}</p>
-                  <div className="text-xs text-gray-500">
-                    {new Date(step.timestamp).toLocaleTimeString()}
-                  </div>
-                  
-                  {/* Show additional details for certain steps */}
-                  {step.details && Object.keys(step.details).length > 0 && (
-                    <div className="mt-2 text-xs bg-white p-2 rounded border">
-                      {step.step === 'query_decomposition' && step.details.sub_queries && (
-                        <div>
-                          <span className="font-medium">Sub-queries ({step.details.sub_queries.length}):</span>
-                          <ul className="list-disc list-inside mt-1 space-y-1">
-                            {step.details.sub_queries.slice(0, 3).map((query: string, i: number) => (
-                              <li key={i} className="text-gray-600">{query}</li>
-                            ))}
-                            {step.details.sub_queries.length > 3 && (
-                              <li className="text-gray-500">... and {step.details.sub_queries.length - 3} more</li>
-                            )}
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {step.step === 'metadata_loading' && step.details.files_count && (
-                        <span>Analyzed {step.details.files_count} files</span>
-                      )}
-                      
-                      {step.details.sub_query_index && (
-                        <span>Processing sub-query {step.details.sub_query_index}</span>
-                      )}
-                      
-                      {step.details.chunks_found !== undefined && (
-                        <span>Found {step.details.chunks_found} relevant chunks</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
+          <span className="text-sm text-blue-800 font-medium">
+            {formatStepName(latestStep.step)}...
+          </span>
+          <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
+            Live Stream
+          </Badge>
+        </div>
+        {latestStep.message && latestStep.message !== formatStepName(latestStep.step) && (
+          <p className="text-xs text-blue-700 mt-1 ml-6">{latestStep.message}</p>
         )}
-      </Card>
+      </div>
     )
   }
 
@@ -795,23 +750,6 @@ const DocumentChatBot = () => {
               </div>
             )}
 
-            {/* Files Searched */}
-            {documentResponse.files_searched && documentResponse.files_searched.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-gray-700">Files Analyzed</span>
-                <div className="bg-white p-3 rounded border">
-                  <div className="flex flex-wrap gap-2">
-                    {documentResponse.files_searched.map((fileName, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        <FileText className="h-3 w-3 mr-1" />
-                        {fileName}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Sources */}
             {documentResponse.sources && documentResponse.sources.length > 0 && (
               <div className="space-y-2">
@@ -847,20 +785,20 @@ const DocumentChatBot = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-background">
+    <div className="flex flex-col w-full">
       {/* Header */}
-      <div className="flex-shrink-0 border-b bg-card">
-        <div className="flex items-center justify-between p-3 md:p-4">
-          <div className="flex items-center space-x-2 md:space-x-3">
-            <Avatar className="h-8 w-8 md:h-10 md:w-10">
+      <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center space-x-3">
+            <Avatar className="h-8 w-8">
               <AvatarFallback className="bg-pink-600 text-white">
-                <Bot className="h-4 w-4 md:h-5 md:w-5" />
+                <Bot className="h-4 w-4" />
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0 flex-1">
-              <h1 className="text-sm md:text-lg font-semibold truncate">DataRoom AI Assistant</h1>
-              <p className="text-xs md:text-sm text-muted-foreground truncate">
-                {isStreaming ? 'Processing via dual API approach...' : 'Ask questions about your documents'}
+              <h3 className="text-lg font-semibold text-gray-900">AI Assistant</h3>
+              <p className="text-sm text-gray-600">
+                {isStreaming ? 'Processing your question...' : 'Ask questions about your documents'}
               </p>
             </div>
           </div>
@@ -874,34 +812,34 @@ const DocumentChatBot = () => {
       </div>
 
       {/* Messages Area */}
-      <ScrollArea className="flex-1 p-2 md:p-4">
-        <div className="max-w-4xl mx-auto space-y-3 md:space-y-4">
+      <div className="p-4 bg-gray-50 min-h-[400px]">
+        <div className="space-y-4">
           {messages.map((message) => (
             <div key={message.id} className="space-y-2">
-              <div className={`flex gap-2 md:gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {message.type === 'bot' && (
-                  <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
+                  <Avatar className="w-8 h-8 flex-shrink-0 mt-1">
                     <AvatarFallback className={`text-white ${message.isError ? 'bg-red-500' : message.isStreaming ? 'bg-blue-600' : 'bg-pink-600'}`}>
-                      {message.isError ? <AlertTriangle className="h-3 w-3 md:h-4 md:w-4" /> : 
-                       message.isStreaming ? <Activity className="h-3 w-3 md:h-4 md:w-4 animate-pulse" /> :
-                       <Bot className="h-3 w-3 md:h-4 md:w-4" />}
+                      {message.isError ? <AlertTriangle className="h-4 w-4" /> : 
+                       message.isStreaming ? <Activity className="h-4 w-4 animate-pulse" /> :
+                       <Bot className="h-4 w-4" />}
                     </AvatarFallback>
                   </Avatar>
                 )}
                 
-                <div className={`max-w-[85%] md:max-w-[75%] space-y-2 ${message.type === 'user' ? 'order-first' : ''}`}>
-                  <div className={`rounded-2xl px-3 py-2 md:px-4 md:py-3 ${
+                <div className={`max-w-[75%] space-y-2 ${message.type === 'user' ? 'order-first' : ''}`}>
+                  <div className={`rounded-lg px-4 py-3 ${
                     message.type === 'user' 
-                      ? 'bg-gray-500 text-white ml-auto' 
+                      ? 'bg-blue-600 text-white ml-auto' 
                       : message.isError
                       ? 'bg-red-50 border border-red-200'
                       : message.isStreaming
                       ? 'bg-blue-50 border border-blue-200'
-                      : 'bg-muted'
+                      : 'bg-white border border-gray-200'
                   }`}>
-                    <p className="text-xs md:text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                     <div className="flex items-center justify-between mt-2">
-                      <span className={`text-xs ${message.type === 'user' ? 'text-blue-100' : 'text-muted-foreground'}`}>
+                      <span className={`text-xs ${message.type === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
                         {formatTime(message.timestamp)}
                       </span>
                       <div className="flex gap-1">
@@ -931,14 +869,14 @@ const DocumentChatBot = () => {
                   
                   {/* Quick Replies */}
                   {message.quickReplies && !message.isStreaming && (
-                    <div className="flex flex-wrap gap-1.5 md:gap-2 mt-2">
+                    <div className="flex flex-wrap gap-2 mt-2">
                       {message.quickReplies.map((reply) => (
                         <Button
                           key={reply.id}
                           variant="outline"
                           size="sm"
                           onClick={() => handleQuickReply(reply.action, reply.text)}
-                          className="text-xs h-6 md:h-7 px-2 md:px-3 rounded-full bg-background/50 hover:bg-background border-muted-foreground/20 hover:border-muted-foreground/40 transition-all"
+                          className="text-xs h-7 px-3 rounded-full bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 transition-all"
                         >
                           {reply.text}
                         </Button>
@@ -948,9 +886,9 @@ const DocumentChatBot = () => {
                 </div>
 
                 {message.type === 'user' && (
-                  <Avatar className="w-6 h-6 md:w-8 md:h-8 flex-shrink-0 mt-1">
-                    <AvatarFallback className="bg-pink-500 text-white">
-                      <User className="h-3 w-3 md:h-4 md:w-4" />
+                  <Avatar className="w-8 h-8 flex-shrink-0 mt-1">
+                    <AvatarFallback className="bg-blue-600 text-white">
+                      <User className="h-4 w-4" />
                     </AvatarFallback>
                   </Avatar>
                 )}
@@ -959,35 +897,33 @@ const DocumentChatBot = () => {
           ))}
         </div>
         <div ref={messagesEndRef} />
-      </ScrollArea>
+      </div>
 
       {/* Input Area */}
-      <div className="flex-shrink-0 border-t bg-card">
-        <div className="p-2 md:p-4 max-w-4xl mx-auto">
-          <div className="flex items-end space-x-1 md:space-x-2">
-            <div className="flex-1 min-w-0">
-              <Input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder={isStreaming ? "Processing your previous question..." : "Ask about your documents... (e.g., 'What was our profit this year?')"}
-                className="h-9"
-                disabled={isStreaming}
-              />
-            </div>
-            
-            <Button 
-              variant="default"
-              size="icon"
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isStreaming}
-              className="h-9 w-9 p-0 bg-pink-600 hover:bg-pink-700"
-              title="Send message"
-            >
-              {isStreaming ? <Activity className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
-            </Button>
+      <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4">
+        <div className="flex items-end space-x-2">
+          <div className="flex-1 min-w-0">
+            <Input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={isStreaming ? "Processing your previous question..." : "Ask about your documents... (e.g., 'What was our profit this year?')"}
+              className="h-10"
+              disabled={isStreaming}
+            />
           </div>
+          
+          <Button 
+            variant="default"
+            size="icon"
+            onClick={handleSendMessage}
+            disabled={!inputValue.trim() || isStreaming}
+            className="h-10 w-10 p-0 bg-blue-600 hover:bg-blue-700"
+            title="Send message"
+          >
+            {isStreaming ? <Activity className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
+          </Button>
         </div>
       </div>
     </div>
