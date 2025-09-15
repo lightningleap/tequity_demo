@@ -134,7 +134,17 @@ const FilesView: React.FC<FilesViewProps> = ({
       onFilesChange(uploadedFiles);
     } catch (error) {
       console.error('FilesView: Failed to load files from backend:', error);
-      toast.error('Failed to load files. Please check your connection and try again.');
+      toast.error('Failed to load files. Please check your connection and try again.', {
+        position: 'top-right',
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } finally {
       setIsLoading(false);
     }
@@ -222,26 +232,42 @@ const FilesView: React.FC<FilesViewProps> = ({
 
   const showSuccessToast = (message: string) => {
     toast.success(message, {
-      position: 'bottom-right',
-      autoClose: 3000,
+      position: 'top-right',
+      autoClose: 8000, // Increased from 3000 to 8000ms (8 seconds)
       hideProgressBar: false,
       closeOnClick: true,
       pauseOnHover: true,
       draggable: true,
+      style: {
+        backgroundColor: '#10B981',
+        color: 'white',
+        fontWeight: '500'
+      }
     });
   };
 
   const handleUploadError = (fileName: string, error: unknown) => {
     console.error(`FilesView: Failed to upload ${fileName}:`, error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    
     toast.error(
-      `Failed to upload ${fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to upload "${fileName}": ${errorMessage}`,
       {
         position: 'top-right',
-        autoClose: 5000,
-        hideProgressBar: false,
+        autoClose: false, // Changed from 5000 to false - won't auto-close
+        hideProgressBar: true,
         closeOnClick: true,
         pauseOnHover: true,
         draggable: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500',
+          fontSize: '14px',
+          maxWidth: '400px'
+        },
+        toastId: `upload-error-${fileName}`, // Prevent duplicate toasts
       }
     );
   };
@@ -293,7 +319,18 @@ const FilesView: React.FC<FilesViewProps> = ({
           console.error('FilesView: Batch upload failed:', error);
           toast.error(
             error instanceof Error ? error.message : 'Failed to upload files',
-            { position: 'top-right', autoClose: 5000 }
+            { 
+              position: 'top-right', 
+              autoClose: false,
+              hideProgressBar: true,
+              closeOnClick: true,
+              style: {
+                backgroundColor: '#EF4444',
+                color: 'white',
+                fontWeight: '500',
+                maxWidth: '400px'
+              }
+            }
           );
         }
       }
@@ -306,7 +343,17 @@ const FilesView: React.FC<FilesViewProps> = ({
       
     } catch (error) {
       console.error('FilesView: File upload failed:', error);
-      toast.error('An unexpected error occurred during file upload');
+      toast.error('An unexpected error occurred during file upload', {
+        position: 'top-right',
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } finally {
       setIsLoading(false);
       setCurrentProcessingFile(null);
@@ -350,7 +397,17 @@ const FilesView: React.FC<FilesViewProps> = ({
       console.log(`FilesView: Successfully downloaded ${uploadedFile.name}`);
     } catch (error) {
       console.error('FilesView: Failed to download file:', error);
-      toast.error('Failed to download file. Please try again.');
+      toast.error('Failed to download file. Please try again.', {
+        position: 'top-right',
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     }
   };
 
@@ -372,10 +429,32 @@ const FilesView: React.FC<FilesViewProps> = ({
       await refreshFilesAfterUpload();
       
       console.log(`FilesView: File ${fileToDelete.id} deleted successfully`);
-      toast.success('File deleted successfully');
+      toast.success('File deleted successfully', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        style: {
+          backgroundColor: '#10B981',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } catch (error) {
       console.error('FilesView: Failed to delete file:', error);
-      toast.error('Failed to delete file. Please try again.');
+      toast.error('Failed to delete file. Please try again.', {
+        position: 'top-right',
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } finally {
       setFileToDelete(null);
     }
@@ -392,10 +471,32 @@ const FilesView: React.FC<FilesViewProps> = ({
       console.log(`FilesView: Updated file ${fileId} category to ${category}`);
       
       // Show success toast
-      toast.success('Category updated successfully');
+      toast.success('Category updated successfully', {
+        position: 'top-right',
+        autoClose: 4000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        style: {
+          backgroundColor: '#10B981',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } catch (error) {
       console.error('FilesView: Failed to update category:', error);
-      toast.error('Failed to update category. Please try again.');
+      toast.error('Failed to update category. Please try again.', {
+        position: 'top-right',
+        autoClose: false,
+        hideProgressBar: true,
+        closeOnClick: true,
+        style: {
+          backgroundColor: '#EF4444',
+          color: 'white',
+          fontWeight: '500'
+        }
+      });
     } finally {
       setIsUpdatingCategory(false);
     }
@@ -602,11 +703,6 @@ const FilesView: React.FC<FilesViewProps> = ({
                           <p className="text-sm text-gray-500">
                             {formatFileSize(file.size)} • {file.type}
                           </p>
-                          {/* {file.category && (
-                            <p className="text-xs text-blue-600 mt-1">
-                              {file.category}
-                            </p>
-                          )} */}
                           <div className="flex items-center space-x-2 text-xs text-gray-400 mt-1">
                             <span>Uploaded: {file.uploadDate.toLocaleDateString()}</span>
                             {file.aiProcessed && (
@@ -716,13 +812,6 @@ const FilesView: React.FC<FilesViewProps> = ({
           <p className="text-gray-500 mb-4">
             Upload your first file to get started with AI document processing
           </p>
-          {/* <button
-            onClick={() => document.getElementById('file-upload')?.click()}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Files
-          </button> */}
         </div>
       )}
 
