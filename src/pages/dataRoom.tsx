@@ -166,9 +166,9 @@ const DataRoom: React.FC = () => {
   // };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-2">
       {/* Header */}
-      <div className="mb-6">
+      {/* <div className="mb-2">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">DataRoom</h1>
@@ -177,10 +177,16 @@ const DataRoom: React.FC = () => {
             </p>
           </div>
         </div>
-      </div>
+      </div> */}
       
       {/* Tab Navigation */}
       <div className="flex border-b border-gray-200 mb-6">
+        <button
+          onClick={() => setActiveTab('files')}
+        >
+    
+          <h1 className="text-2xl font-bold pr-2">DataRoom</h1>
+        </button>
         <button
           className={`py-2 px-4 font-medium flex items-center space-x-2 ${
             activeTab === 'files'
