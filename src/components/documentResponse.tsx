@@ -211,16 +211,30 @@ const DocumentChatBot = () => {
     currentIndex: number
   }>({ messageId: null, isPaused: false, currentIndex: 0 })
   
-  const messagesEndRef = useRef(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const isInitialMount = useRef(true)
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    // Use scrollTop instead of scrollIntoView to avoid affecting page scroll
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
   }
 
   useEffect(() => {
-    scrollToBottom()
+    // Skip scrolling on initial mount to prevent unwanted page scroll
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+    
+    // Only scroll to bottom when messages are actually added/updated
+    if (messages.length > 1) { // Changed from > 0 to > 1 to account for the welcome message
+      scrollToBottom()
+    }
   }, [messages])
 
   const formatTime = (timestamp: Date) => {
@@ -1531,7 +1545,7 @@ const DocumentChatBot = () => {
       />
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 pb-24">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto bg-gray-50 pb-24">
         <div className="space-y-4 p-4">
           {messages.map((message) => (
             <div key={message.id} className="space-y-2">
