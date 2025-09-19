@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../store/authSlice';
+
 const Navbar = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -13,14 +14,12 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-white border-b border-gray-200">
+    <nav className="bg-white border-b border-gray-200 fixed top-0 left-0 right-0 z-50">
       <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
-          <div className="flex
-          ">
+          <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-            <img src="logos/tequity-big-logo.png" alt="Tequity Logo" className="w-50" />
-
+              <img src="logos/tequity-big-logo.png" alt="Tequity Logo" className="w-50" />
             </div>
             {/* <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
               {isAuthenticated && (

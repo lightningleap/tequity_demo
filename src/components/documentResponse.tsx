@@ -1520,7 +1520,7 @@ const DocumentChatBot = () => {
   }
 
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full h-[calc(100vh-4rem)]">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -1530,38 +1530,9 @@ const DocumentChatBot = () => {
         className="hidden"
       />
 
-      {/* Header */}
-      {/* <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center space-x-3">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-pink-600 text-white">
-                <Bot className="h-4 w-4" />
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-lg font-semibold text-gray-900">AI Assistant</h3>
-              <p className="text-sm text-gray-600">
-                {isStreaming ? 'Processing your question...' : 
-                 batchProcessing.messageId ? 'Batch processing in progress...' :
-                 'Ask questions about your documents or upload Excel files'}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {(isStreaming || batchProcessing.messageId) && (
-              <>
-                <Activity className="h-4 w-4 text-blue-600 animate-pulse" />
-                <span className="text-sm text-blue-600">Live</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div> */}
-
       {/* Messages Area */}
-      <div className="p-4 bg-gray-50 min-h-[400px]">
-        <div className="space-y-4">
+      <div className="flex-1 overflow-y-auto bg-gray-50 pb-24">
+        <div className="space-y-4 p-4">
           {messages.map((message) => (
             <div key={message.id} className="space-y-2">
               <div className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -1661,51 +1632,53 @@ const DocumentChatBot = () => {
               </div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
-        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="flex-shrink-0 border-t border-gray-200 bg-white p-4">
-        <div className="flex items-end space-x-2">
-          <div className="flex-1 min-w-0">
-            <Input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={
-                isStreaming ? "Processing your previous question..." : 
-                batchProcessing.messageId ? "Batch processing in progress..." :
-                "Ask about your documents... (e.g., 'What was our profit this year?')"
-              }
-              className="h-10"
-              disabled={isStreaming || !!batchProcessing.messageId}
-            />
-          </div>
-          
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || !!batchProcessing.messageId}
-              className="h-10 w-10 p-0 hover:bg-gray-100"
-              title="Upload Excel file with questions"
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
+      {/* Input Area - Fixed at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 z-10 border-t border-gray-200 bg-white shadow-lg">
+        <div className="p-4 mx-auto max-w-screen-xl">
+          <div className="flex items-end space-x-2">
+            <div className="flex-1 min-w-0">
+              <Input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={
+                  isStreaming ? "Processing your previous question..." : 
+                  batchProcessing.messageId ? "Batch processing in progress..." :
+                  "Ask about your documents... (e.g., 'What was our profit this year?')"
+                }
+                className="h-10"
+                disabled={isStreaming || !!batchProcessing.messageId}
+              />
+            </div>
             
-            <Button 
-              variant="default"
-              size="icon"
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isStreaming || !!batchProcessing.messageId}
-              className="h-10 w-10 p-0 bg-blue-600 hover:bg-blue-700"
-              title="Send message"
-            >
-              {isStreaming ? <Activity className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || !!batchProcessing.messageId}
+                className="h-10 w-10 p-0 hover:bg-gray-100"
+                title="Upload Excel file with questions"
+              >
+                <Upload className="h-4 w-4" />
+              </Button>
+              
+              <Button 
+                variant="default"
+                size="icon"
+                onClick={handleSendMessage}
+                disabled={!inputValue.trim() || isStreaming || !!batchProcessing.messageId}
+                className="h-10 w-10 p-0 bg-blue-600 hover:bg-blue-700"
+                title="Send message"
+              >
+                {isStreaming ? <Activity className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
