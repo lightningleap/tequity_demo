@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import * as XLSX from 'xlsx'
 import { 
   Send, 
   Bot,
@@ -31,7 +32,8 @@ import {
   Play,
   Pause,
   X,
-  FileX
+  FileX,
+  Trash2
 } from 'lucide-react'
 
 // Types for the streaming data
@@ -185,19 +187,51 @@ interface ChatMessage {
 }
 
 const DocumentChatBot = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 1,
-      type: 'bot',
-      content: 'Hello! I\'m your AI assistant with access to your DataRoom documents. I can answer questions about your uploaded files.',
-      timestamp: new Date(),
-      quickReplies: [
-        { id: 'example1', text: 'What\'s in my documents?', action: 'list_files' },
-        { id: 'example2', text: 'Financial summary', action: 'financial_summary' },
-        { id: 'example3', text: 'Upload Excel questions', action: 'upload_excel' }
-      ]
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    // Load messages from local storage on mount
+    const savedMessages = localStorage.getItem('chatMessages')
+    if (savedMessages) {
+      try {
+        // Parse dates back to Date objects
+        const parsedMessages = JSON.parse(savedMessages, (key, value) => {
+          if (key === 'timestamp' || key === 'startTime' || key === 'endTime') {
+            return value ? new Date(value) : null
+          }
+          return value
+        })
+        return parsedMessages
+      } catch (error) {
+        console.error('Error loading messages from local storage:', error)
+        return [
+          {
+            id: 1,
+            type: 'bot',
+            content: 'Hello! I\'m your AI assistant with access to your DataRoom documents. I can answer questions about your uploaded files.',
+            timestamp: new Date(),
+            quickReplies: [
+              { id: 'example1', text: 'What\'s in my documents?', action: 'list_files' },
+              { id: 'example2', text: 'Financial summary', action: 'financial_summary' },
+              { id: 'example3', text: 'Upload Excel questions', action: 'upload_excel' }
+            ]
+          }
+        ]
+      }
     }
-  ])
+    // Default welcome message if no saved messages
+    return [
+      {
+        id: 1,
+        type: 'bot',
+        content: 'Hello! I\'m your AI assistant with access to your DataRoom documents. I can answer questions about your uploaded files.',
+        timestamp: new Date(),
+        quickReplies: [
+          { id: 'example1', text: 'What\'s in my documents?', action: 'list_files' },
+          { id: 'example2', text: 'Financial summary', action: 'financial_summary' },
+          { id: 'example3', text: 'Upload Excel questions', action: 'upload_excel' }
+        ]
+      }
+    ]
+  })
   
   const [inputValue, setInputValue] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -237,6 +271,11 @@ const DocumentChatBot = () => {
     }
   }, [messages])
 
+  useEffect(() => {
+    // Save messages to local storage whenever they change
+    localStorage.setItem('chatMessages', JSON.stringify(messages))
+  }, [messages])
+
   const formatTime = (timestamp: Date) => {
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
@@ -264,23 +303,90 @@ const DocumentChatBot = () => {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer)
           
-          // Since we don't have XLSX library in this environment,
-          // we'll need to handle this differently
-          // For now, let's create a mock implementation
-          // In a real implementation, you'd use XLSX.read(data, {type: 'array'})
+          // Parse the Excel file using XLSX library
+          const workbook = XLSX.read(data, { type: 'array' })
           
-          // Mock data for demonstration
-          const questions = [
-            "What was our total revenue last quarter?",
-            "How many customers do we have?",
-            "What are our main expense categories?",
-            "Show me the profit margins by product",
-            "What was our customer acquisition cost?"
-          ]
+          // Get the first worksheet
+          const firstSheetName = workbook.SheetNames[0]
+          if (!firstSheetName) {
+            reject(new Error('No worksheets found in the Excel file'))
+            return
+          }
           
-          resolve(questions)
+          const worksheet = workbook.Sheets[firstSheetName]
+          
+          // Convert worksheet to JSON format
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1, // Use array format instead of object format
+            defval: '', // Default value for empty cells
+            raw: false // Convert all values to strings
+          }) as string[][]
+          
+          if (jsonData.length === 0) {
+            reject(new Error('The Excel file appears to be empty'))
+            return
+          }
+          
+          // Extract questions from the data
+          const questions: string[] = []
+          
+          // Check if first row contains headers
+          const firstRow = jsonData[0]
+          let startRow = 0
+          
+          // Look for a "Question" or "Questions" header in the first row
+          const questionColumnIndex = firstRow.findIndex(cell => 
+            cell && typeof cell === 'string' && 
+            cell.toLowerCase().includes('question')
+          )
+          
+          if (questionColumnIndex !== -1) {
+            // Found a question header, start from row 1
+            startRow = 1
+            
+            // Extract questions from the identified column
+            for (let i = startRow; i < jsonData.length; i++) {
+              const row = jsonData[i]
+              if (row && row[questionColumnIndex] && typeof row[questionColumnIndex] === 'string') {
+                const question = row[questionColumnIndex].trim()
+                if (question.length > 0) {
+                  questions.push(question)
+                }
+              }
+            }
+          } else {
+            // No header found, assume first column contains questions
+            for (let i = 0; i < jsonData.length; i++) {
+              const row = jsonData[i]
+              if (row && row[0] && typeof row[0] === 'string') {
+                const question = row[0].trim()
+                // Skip if it looks like a header
+                if (question.length > 0 && 
+                    !question.toLowerCase().includes('question') &&
+                    !question.toLowerCase().includes('query')) {
+                  questions.push(question)
+                }
+              }
+            }
+          }
+          
+          if (questions.length === 0) {
+            reject(new Error('No questions found in the Excel file. Please ensure questions are in the first column or under a "Questions" header.'))
+            return
+          }
+          
+          // Limit to reasonable number of questions
+          const maxQuestions = 50
+          if (questions.length > maxQuestions) {
+            console.warn(`Excel file contains ${questions.length} questions. Limiting to first ${maxQuestions} questions.`)
+            resolve(questions.slice(0, maxQuestions))
+          } else {
+            resolve(questions)
+          }
+          
         } catch (error) {
-          reject(new Error('Failed to parse Excel file'))
+          console.error('Error parsing Excel file:', error)
+          reject(new Error('Failed to parse Excel file. Please ensure it\'s a valid .xlsx or .xls file.'))
         }
       }
       
@@ -295,20 +401,43 @@ const DocumentChatBot = () => {
 
     // Validate file type
     const validTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel'
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'application/vnd.ms-excel', // .xls
+      'text/csv' // .csv (also supported by XLSX library)
     ]
     
-    if (!validTypes.includes(file.type)) {
-      alert('Please upload a valid Excel file (.xlsx or .xls)')
+    const validExtensions = ['.xlsx', '.xls', '.csv']
+    const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'))
+    
+    if (!validTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
+      alert('Please upload a valid Excel file (.xlsx, .xls) or CSV file (.csv)')
+      return
+    }
+
+    // Check file size (limit to 10MB)
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    if (file.size > maxSize) {
+      alert('File size is too large. Please upload a file smaller than 10MB.')
       return
     }
 
     try {
+      // Show loading feedback
+      const loadingMessage: ChatMessage = {
+        id: Date.now(),
+        type: 'bot',
+        content: `Processing ${file.name}... Please wait.`,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, loadingMessage])
+
       const questions = await parseExcelFile(file)
       
+      // Remove loading message
+      setMessages(prev => prev.filter(msg => msg.id !== loadingMessage.id))
+      
       if (questions.length === 0) {
-        alert('No questions found in the Excel file. Please ensure the first column has "Questions" as header followed by your questions.')
+        alert('No questions found in the Excel file. Please ensure questions are in the first column or under a "Questions" header.')
         return
       }
 
@@ -323,7 +452,7 @@ const DocumentChatBot = () => {
       const batchMessage: ChatMessage = {
         id: Date.now(),
         type: 'batch',
-        content: `Excel file uploaded successfully! Found ${questions.length} questions to process.`,
+        content: `Excel file "${file.name}" uploaded successfully! Found ${questions.length} questions to process.`,
         timestamp: new Date(),
         batchData: {
           questions: batchQuestions,
@@ -340,9 +469,16 @@ const DocumentChatBot = () => {
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
+      
     } catch (error) {
       console.error('Error processing Excel file:', error)
-      alert('Error processing Excel file. Please check the file format and try again.')
+      
+      // Remove any loading message
+      setMessages(prev => prev.filter(msg => !msg.content.includes('Processing')))
+      
+      // Show error message
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      alert(`Error processing Excel file: ${errorMessage}`)
     }
   }
 
@@ -1014,6 +1150,26 @@ const DocumentChatBot = () => {
     }
   }, [])
 
+  const clearConversation = () => {
+    // Reset to initial welcome message
+    const welcomeMessage: ChatMessage = {
+      id: Date.now(),
+      type: 'bot',
+      content: 'Hello! I\'m your AI assistant with access to your DataRoom documents. I can answer questions about your uploaded files.',
+      timestamp: new Date(),
+      quickReplies: [
+        { id: 'example1', text: 'What\'s in my documents?', action: 'list_files' },
+        { id: 'example2', text: 'Financial summary', action: 'financial_summary' },
+        { id: 'example3', text: 'Upload Excel questions', action: 'upload_excel' }
+      ]
+    }
+    setMessages([welcomeMessage])
+    
+    // Clear any ongoing processes
+    cleanupEventSource()
+    setBatchProcessing({ messageId: null, isPaused: false, currentIndex: 0 })
+  }
+
   const renderProcessingSteps = (message: ChatMessage) => {
     if (!message.processingSteps || message.processingSteps.length === 0) return null
 
@@ -1064,11 +1220,11 @@ const DocumentChatBot = () => {
     const progressPercentage = (completedQuestions + failedQuestions) / totalQuestions * 100
 
     return (
-      <Card className="mt-3 bg-amber-50 border-amber-200">
+      <Card className="mt-3 bg-green-50 border-green-200">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4 text-amber-600" />
+              <FileSpreadsheet className="h-4 w-4 text-green-600" />
               Batch Processing: {fileName}
             </CardTitle>
             <div className="flex gap-2">
@@ -1165,31 +1321,42 @@ const DocumentChatBot = () => {
         </CardHeader>
         
         <CardContent className="pt-0">
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-3 max-h-[600px] overflow-y-auto">
             {questions.map((question, index) => {
               const questionKey = `${message.id}-batch-${index}`
               const isExpanded = expandedBatchQuestions[questionKey]
               
               return (
-                <div key={index} className="bg-white rounded border">
-                  <div className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                <div key={index} className="bg-white rounded-lg border shadow-sm">
+                  <div className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => toggleBatchQuestionExpansion(questionKey)}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
                         <Badge 
                           variant={
                             question.status === 'completed' ? 'default' :
                             question.status === 'failed' ? 'destructive' :
                             question.status === 'processing' ? 'secondary' : 'outline'
                           } 
-                          className="text-xs flex-shrink-0"
+                          className="text-xs flex-shrink-0 mt-1"
                         >
                           {index + 1}
                         </Badge>
-                        <span className="text-sm font-medium truncate">{question.question}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 leading-relaxed">{question.question}</p>
+                          {question.status === 'processing' && (
+                            <p className="text-xs text-blue-600 mt-1">Processing...</p>
+                          )}
+                          {question.status === 'completed' && question.answer && (
+                            <p className="text-xs text-green-600 mt-1">Answer available - click to expand</p>
+                          )}
+                          {question.status === 'failed' && (
+                            <p className="text-xs text-red-600 mt-1">Processing failed</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         {question.status === 'processing' && (
                           <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                         )}
@@ -1200,46 +1367,50 @@ const DocumentChatBot = () => {
                           <AlertTriangle className="h-4 w-4 text-red-600" />
                         )}
                         {question.answer && (
-                          <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          <ChevronDown className={`h-4 w-4 transition-transform text-gray-400 ${isExpanded ? 'rotate-180' : ''}`} />
                         )}
                       </div>
                     </div>
                   </div>
                   
                   {isExpanded && question.answer && (
-                    <div className="border-t p-3">
+                    <div className="border-t bg-gray-50 p-4">
                       <div className="text-sm space-y-4">
                         {/* Main Answer */}
-                        <div className="space-y-2">
-                          <div className="font-medium text-gray-700">Answer:</div>
-                          <div className="text-gray-900 whitespace-pre-wrap">{question.answer}</div>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-green-600" />
+                            <span className="font-medium text-gray-900">Answer:</span>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <div className="text-gray-900 whitespace-pre-wrap leading-relaxed">{question.answer}</div>
+                          </div>
                         </div>
 
                         {/* Document Response Details */}
                         {question.documentResponse && (
-                          <Card className="bg-green-50 border-green-200">
-                            <CardHeader className="pb-2">
-                              <div className="flex items-center justify-between">
-                                <CardTitle className="text-sm flex items-center gap-2">
-                                  <Database className="h-4 w-4 text-green-600" />
-                                  Analysis Details
-                                  {question.documentResponse.optimization_used && (
-                                    <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 flex items-center gap-1">
-                                      <Zap className="h-3 w-3" />
-                                      Optimized
-                                    </Badge>
-                                  )}
-                                </CardTitle>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="pt-0 space-y-4">
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                              <Database className="h-4 w-4 text-green-600" />
+                              <span className="font-medium text-gray-900">Analysis Details</span>
+                              {question.documentResponse.optimization_used && (
+                                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-800 flex items-center gap-1">
+                                  <Zap className="h-3 w-3" />
+                                  Optimized
+                                </Badge>
+                              )}
+                            </div>
+                            
+                            <Card className="bg-white border border-green-200">
+                              <CardContent className="p-4 space-y-4">
                               {/* Sub-Queries Analysis */}
                               {question.documentResponse.sub_queries && question.documentResponse.sub_queries.length > 0 && (
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                   <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
                                     <HelpCircle className="h-4 w-4" />
                                     Query Breakdown ({question.documentResponse.sub_queries.length} parts)
                                   </span>
+                                  <div className="space-y-2">
                                   {question.documentResponse.sub_queries.map((subQuery, subIndex) => {
                                     const subQueryKey = `${message.id}-question-${index}-subquery-${subIndex}`
                                     const isSubExpanded = expandedSubQueries[subQueryKey]
@@ -1311,19 +1482,24 @@ const DocumentChatBot = () => {
                                       </div>
                                     )
                                   })}
+                                  </div>
                                 </div>
                               )}
 
                               {/* Sources */}
                               {question.documentResponse.sources && question.documentResponse.sources.length > 0 && (
-                                <div className="space-y-2">
-                                  <span className="text-sm font-medium text-gray-700">Source Documents</span>
+                                <div className="space-y-3">
+                                  <span className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Source Documents ({question.documentResponse.sources.length})
+                                  </span>
+                                  <div className="grid gap-2">
                                   {question.documentResponse.sources.map((source, sourceIndex) => (
-                                    <div key={sourceIndex} className="bg-white p-2 rounded border">
-                                      <div className="flex items-center justify-between mb-1">
+                                    <div key={sourceIndex} className="bg-gray-50 p-3 rounded-lg border">
+                                      <div className="flex items-center justify-between mb-2">
                                         <div className="flex items-center gap-2">
                                           <FileText className="h-4 w-4 text-blue-600" />
-                                          <span className="font-medium">{source.file_name}</span>
+                                          <span className="font-medium text-gray-900">{source.file_name}</span>
                                         </div>
                                       </div>
                                       {source.category && (
@@ -1333,39 +1509,50 @@ const DocumentChatBot = () => {
                                       )}
                                     </div>
                                   ))}
+                                  </div>
                                 </div>
                               )}
 
                               {/* Processing Statistics */}
-                              <div className="text-xs text-gray-500 space-y-1">
-                                {question.documentResponse.sub_queries && (
-                                  <div className="flex items-center gap-1">
-                                    <HelpCircle className="h-3 w-3" />
-                                    Queries: {question.documentResponse.sub_queries.length}
-                                  </div>
-                                )}
-                                {question.documentResponse.files_searched && (
-                                  <div className="flex items-center gap-1">
-                                    <FileText className="h-3 w-3" />
-                                    Files searched: {question.documentResponse.files_searched.length}
-                                  </div>
-                                )}
-                                {question.documentResponse.timestamp && (
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    Processed: {new Date(question.documentResponse.timestamp).toLocaleString()}
-                                  </div>
-                                )}
+                              <div className="bg-gray-50 rounded-lg p-3 border">
+                                <div className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                                  <Activity className="h-4 w-4" />
+                                  Processing Statistics
+                                </div>
+                                <div className="text-xs text-gray-600 space-y-1">
+                                  {question.documentResponse.sub_queries && (
+                                    <div className="flex items-center gap-1">
+                                      <HelpCircle className="h-3 w-3" />
+                                      Queries: {question.documentResponse.sub_queries.length}
+                                    </div>
+                                  )}
+                                  {question.documentResponse.files_searched && (
+                                    <div className="flex items-center gap-1">
+                                      <FileText className="h-3 w-3" />
+                                      Files searched: {question.documentResponse.files_searched.length}
+                                    </div>
+                                  )}
+                                  {question.documentResponse.timestamp && (
+                                    <div className="flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      Processed: {new Date(question.documentResponse.timestamp).toLocaleString()}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </CardContent>
-                          </Card>
+                            </Card>
+                          </div>
                         )}
 
                         {/* Processing Time */}
                         {question.startTime && question.endTime && (
-                          <div className="text-xs text-gray-500 flex items-center gap-2">
-                            <Clock className="h-3 w-3" />
-                            Processing time: {Math.round((question.endTime.getTime() - question.startTime.getTime()) / 1000)}s
+                          <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                            <div className="text-sm text-blue-800 flex items-center gap-2">
+                              <Clock className="h-4 w-4" />
+                              <span className="font-medium">Processing time: </span>
+                              <span>{Math.round((question.endTime.getTime() - question.startTime.getTime()) / 1000)}s</span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1539,7 +1726,7 @@ const DocumentChatBot = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept=".xlsx,.xls,.csv"
         onChange={handleExcelUpload}
         className="hidden"
       />
@@ -1555,7 +1742,7 @@ const DocumentChatBot = () => {
                     <AvatarFallback className={`text-white ${
                       message.isError ? 'bg-red-500' : 
                       message.isStreaming ? 'bg-blue-600' : 
-                      message.type === 'batch' ? 'bg-amber-600' :
+                      message.type === 'batch' ? 'bg-green-600' :
                       'bg-pink-600'
                     }`}>
                       {message.isError ? <AlertTriangle className="h-4 w-4" /> : 
@@ -1575,7 +1762,7 @@ const DocumentChatBot = () => {
                       : message.isStreaming
                       ? 'bg-blue-50 border border-blue-200'
                       : message.type === 'batch'
-                      ? 'bg-amber-50 border border-amber-200'
+                      ? 'bg-green-50 border border-green-200'
                       : 'bg-white border border-gray-200'
                   }`}>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
@@ -1674,10 +1861,21 @@ const DocumentChatBot = () => {
               <Button
                 variant="outline"
                 size="icon"
+                onClick={clearConversation}
+                disabled={isStreaming || !!batchProcessing.messageId}
+                className="h-10 w-10 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                title="Clear conversation"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="outline"
+                size="icon"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isStreaming || !!batchProcessing.messageId}
                 className="h-10 w-10 p-0 hover:bg-gray-100"
-                title="Upload Excel file with questions"
+                title="Upload Excel/CSV file with questions"
               >
                 <Upload className="h-4 w-4" />
               </Button>
