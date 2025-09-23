@@ -25,3 +25,14 @@ dist-ssr
 
 # remove .env files
 .env
+
+# Claude Code local files
+.claude/settings.local.json
+.claude/logs/
+CLAUDE.local.md
+
+# Test artifacts
+test-results/
+playwright-report/
+screenshots/
+videos/
