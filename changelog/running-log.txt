@@ -1,0 +1,14 @@
+# Running Changelog Log
+# This file automatically captures commit details when you commit with changelog info
+
+# Format:
+# === COMMIT: [short-hash] - [date] ===
+# Author: [name]
+# Message: [commit message]
+# Files: [files you specify during commit]
+# Impact: [impact you specify during commit]
+# Breaking: [breaking changes you specify during commit]
+# Notes: [optional notes you specify during commit]
+# ---
+
+# Entries will appear below as you make commits:
