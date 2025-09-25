@@ -25,3 +25,8 @@ dist-ssr
 
 # remove .env files
 .env
+
+# Claude Code and MCP generated files
+.claude/
+.mcp.json
+.playwright-mcp/

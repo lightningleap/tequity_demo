@@ -61,10 +61,11 @@ src/
 ├── pages/
 │   ├── signin.tsx                   # Sign-in page
 │   ├── signup.tsx                   # Sign-up page
-│   ├── dataRoom.tsx                 # Main authenticated page
-│   └── preview.jsx                  # Theme hook demo page
+│   └── dataRoom.tsx                 # Main authenticated page
 ├── services/
 │   └── groqService.js              # AI service layer (Groq integration)
+|__ hooks/
+|
 ├── store/                          # Redux store (TypeScript)
 │   ├── store.ts                    # Main store configuration
 │   ├── authSlice.ts               # Authentication state slice
@@ -73,8 +74,6 @@ src/
 │   └── chatUtils.js               # Chat utility functions
 ├── lib/
 │   └── utils.js                   # General utility functions
-├── hooks/                          # Custom React hooks
-│   └── useTheme.js                # Dark/light mode theme hook
 ├── assets/
 │   └── react.svg                  # Static assets
 ├── App.jsx                        # Main app component with routing
