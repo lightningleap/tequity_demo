@@ -27,6 +27,4 @@ dist-ssr
 .env
 
 # Claude Code and MCP generated files
-.claude/
-.mcp.json
 .playwright-mcp/
