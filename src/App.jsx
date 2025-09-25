@@ -8,6 +8,7 @@ import { checkAuth } from './store/authThunk';
 import ShadcnChatBotGroq from "./components/ShadcnChatBotGroq";
 import SignIn from "./pages/signin";
 import SignUp from "./pages/signup";
+import Preview from "./pages/preview";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Navbar from "./components/Navbar";
 import DataRoom from "./pages/dataRoom";
@@ -59,6 +60,10 @@ function AppContent() {
         <Route
           path="/signup"
           element={isAuthenticated ? <Navigate to="/" replace /> : <SignUp />}
+        />
+        <Route
+          path="/preview"
+          element={<Preview />}
         />
 
         {/* Protected Routes */}
