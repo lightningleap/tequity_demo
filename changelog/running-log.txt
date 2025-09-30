@@ -12,3 +12,13 @@
 # ---
 
 # Entries will appear below as you make commits:
+=== COMMIT: c7ab4f35 - 2025-09-25 17:24:27 +0530 ===
+Author: Ajit Gadkari
+Message: feat: implement automated changelog system
+Files: .git/hooks/prepare-commit-msg, .git/hooks/post-commit, changelog/running-log.txt, .claude/commands/summarize-log.md
+Impact: Adds commit-time changelog logging that captures file changes, impact, and breaking changes automatically
+Breaking: none
+none
+Notes: System now logs detailed commit information to running-log.txt and provides /summarize-log command for generating summaries
+---
+

@@ -19,6 +19,22 @@
         "@playwright/mcp"
       ],
       "env": {}
+    },
+    "browser-tools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@agentdeskai/browser-tools-server@1.2.0"
+      ],
+      "env": {}
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
     }
   }
 }
