@@ -528,8 +528,9 @@ const DocumentChatBot = () => {
 
     const { questions } = message.batchData
 
-    // Process all questions in parallel using Promise.all
-    const questionPromises = questions.slice(startIndex).map(async (question, index) => {
+    // Process all questions sequentially using for...of loop
+    for (let index = 0; index < questions.slice(startIndex).length; index++) {
+      const question = questions[startIndex + index]
       const actualIndex = startIndex + index
 
       // Update question status to processing
@@ -576,8 +577,6 @@ const DocumentChatBot = () => {
           }
           return msg
         }))
-
-        return { success: true, index: actualIndex }
       } catch (error) {
         console.error(`Error processing question ${actualIndex + 1}:`, error)
 
@@ -602,13 +601,8 @@ const DocumentChatBot = () => {
           }
           return msg
         }))
-
-        return { success: false, index: actualIndex }
       }
-    })
-
-    // Wait for all questions to complete
-    await Promise.all(questionPromises)
+    }
 
     // Mark batch processing as complete
     setMessages(prev => prev.map(msg => {
