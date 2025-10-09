@@ -7,8 +7,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import * as XLSX from 'xlsx'
-import { 
-  Send, 
+
+import {
+  Send,
   Bot,
   User,
   Loader2,
@@ -273,7 +274,23 @@ const DocumentChatBot = () => {
 
   useEffect(() => {
     // Save messages to local storage whenever they change
-    localStorage.setItem('chatMessages', JSON.stringify(messages))
+    // But limit the size to prevent quota exceeded errors
+    try {
+      // Only keep the last 20 messages to avoid localStorage quota issues
+      const messagesToSave = messages.slice(-20)
+      localStorage.setItem('chatMessages', JSON.stringify(messagesToSave))
+    } catch (error) {
+      console.error('Error saving messages to localStorage:', error)
+      // If still too large, clear and keep only last 10
+      try {
+        const messagesToSave = messages.slice(-10)
+        localStorage.setItem('chatMessages', JSON.stringify(messagesToSave))
+      } catch (secondError) {
+        console.error('Failed to save messages even after reducing size:', secondError)
+        // Clear localStorage if it's still too large
+        localStorage.removeItem('chatMessages')
+      }
+    }
   }, [messages])
 
   const formatTime = (timestamp: Date) => {
@@ -511,27 +528,22 @@ const DocumentChatBot = () => {
 
     const { questions } = message.batchData
 
-    for (let i = startIndex; i < questions.length; i++) {
-      // Check if processing was paused
-      if (batchProcessing.isPaused) {
-        setBatchProcessing(prev => ({ ...prev, currentIndex: i }))
-        return
-      }
+    // Process all questions in parallel using Promise.all
+    const questionPromises = questions.slice(startIndex).map(async (question, index) => {
+      const actualIndex = startIndex + index
 
-      const question = questions[i]
-      
       // Update question status to processing
       setMessages(prev => prev.map(msg => {
         if (msg.id === messageId && msg.batchData) {
           const updatedQuestions = [...msg.batchData.questions]
-          updatedQuestions[i] = { ...question, status: 'processing', startTime: new Date() }
-          
+          updatedQuestions[actualIndex] = { ...question, status: 'processing', startTime: new Date() }
+
           return {
             ...msg,
             batchData: {
               ...msg.batchData,
               questions: updatedQuestions,
-              currentIndex: i
+              currentIndex: actualIndex
             }
           }
         }
@@ -540,20 +552,20 @@ const DocumentChatBot = () => {
 
       try {
         // Process the question using the same API as individual questions
-        const documentResponse = await processIndividualQuestion(question.question, messageId, i)
-        
+        const documentResponse = await processIndividualQuestion(question.question, messageId, actualIndex)
+
         // Update question with completed status and answer
         setMessages(prev => prev.map(msg => {
           if (msg.id === messageId && msg.batchData) {
             const updatedQuestions = [...msg.batchData.questions]
-            updatedQuestions[i] = { 
-              ...updatedQuestions[i], 
-              status: 'completed', 
+            updatedQuestions[actualIndex] = {
+              ...updatedQuestions[actualIndex],
+              status: 'completed',
               answer: documentResponse.answer,
               documentResponse: documentResponse,
               endTime: new Date()
             }
-            
+
             return {
               ...msg,
               batchData: {
@@ -564,20 +576,22 @@ const DocumentChatBot = () => {
           }
           return msg
         }))
+
+        return { success: true, index: actualIndex }
       } catch (error) {
-        console.error(`Error processing question ${i + 1}:`, error)
-        
+        console.error(`Error processing question ${actualIndex + 1}:`, error)
+
         // Update question with failed status
         setMessages(prev => prev.map(msg => {
           if (msg.id === messageId && msg.batchData) {
             const updatedQuestions = [...msg.batchData.questions]
-            updatedQuestions[i] = { 
-              ...updatedQuestions[i], 
-              status: 'failed', 
+            updatedQuestions[actualIndex] = {
+              ...updatedQuestions[actualIndex],
+              status: 'failed',
               answer: 'Failed to process this question',
               endTime: new Date()
             }
-            
+
             return {
               ...msg,
               batchData: {
@@ -588,11 +602,13 @@ const DocumentChatBot = () => {
           }
           return msg
         }))
-      }
 
-      // Small delay between questions to avoid overwhelming the API
-      await new Promise(resolve => setTimeout(resolve, 1000))
-    }
+        return { success: false, index: actualIndex }
+      }
+    })
+
+    // Wait for all questions to complete
+    await Promise.all(questionPromises)
 
     // Mark batch processing as complete
     setMessages(prev => prev.map(msg => {
@@ -613,116 +629,119 @@ const DocumentChatBot = () => {
   }
 
   const processIndividualQuestion = async (question: string, batchMessageId: number, questionIndex: number): Promise<DocumentResponse> => {
-    return new Promise((resolve, reject) => {
-      const sessionId = generateSessionId()
-      
-      try {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-        const streamUrl = `${baseUrl}/question-live-stream/${sessionId}?question=${encodeURIComponent(question)}`
-        const eventSource = new EventSource(streamUrl)
+    const sessionId = generateSessionId()
 
-        let documentResponse: DocumentResponse | null = null
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://139.59.25.32:8000'
+      const url = `${baseUrl}/question-live`
 
-        eventSource.onmessage = (event) => {
-          try {
-            const data: LiveStreamData = JSON.parse(event.data)
-            console.log('Received SSE data:', data)
+      const requestBody = {
+        question: question,
+        session_id: sessionId
+      }
 
-            if (data.type === 'complete' && data.final_result) {
-              const constructFinalAnswer = () => {
-                if (data.final_result.final_answer && data.final_result.final_answer.trim() && 
-                    data.final_result.final_answer !== 'Processing completed') {
-                  return data.final_result.final_answer;
-                }
+      // Log the request
+      // apiLogger.logRequest(url, 'POST', sessionId, question, requestBody)
 
-                if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
-                  const hasRelevantData = data.final_result.sub_query_results.some(result => 
-                    result.context_chunks && result.context_chunks.length > 0
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'accept': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        // apiLogger.logError(url, `HTTP ${response.status}: ${errorText}`, sessionId, { status: response.status })
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // Log the response
+      // apiLogger.logResponse(url, response.status, data, sessionId)
+
+      console.log('Received API response:', data)
+
+      if (data.final_result) {
+        const constructFinalAnswer = () => {
+          if (data.final_result.final_answer && data.final_result.final_answer.trim() &&
+              data.final_result.final_answer !== 'Processing completed') {
+            return data.final_result.final_answer;
+          }
+
+          if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
+            const hasRelevantData = data.final_result.sub_query_results.some(result =>
+              result.context_chunks && result.context_chunks.length > 0
+            );
+
+            if (hasRelevantData) {
+              let constructedAnswer = "Based on the analysis of your documents:\n\n";
+
+              data.final_result.sub_query_results.forEach((result, index) => {
+                if (result.context_chunks && result.context_chunks.length > 0) {
+                  const relevantChunks = result.context_chunks.filter(chunk =>
+                    chunk.relevance_type === 'category_match' || chunk.text.length > 20
                   );
 
-                  if (hasRelevantData) {
-                    let constructedAnswer = "Based on the analysis of your documents:\n\n";
-                    
-                    data.final_result.sub_query_results.forEach((result, index) => {
-                      if (result.context_chunks && result.context_chunks.length > 0) {
-                        const relevantChunks = result.context_chunks.filter(chunk => 
-                          chunk.relevance_type === 'category_match' || chunk.text.length > 20
-                        );
-                        
-                        if (relevantChunks.length > 0) {
-                          constructedAnswer += `**${result.sub_query}**\n`;
-                          const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file));
-                          constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`;
-                          
-                          relevantChunks.slice(0, 3).forEach(chunk => {
-                            const preview = chunk.text.length > 150 ? 
-                              chunk.text.substring(0, 150) + "..." : chunk.text;
-                            constructedAnswer += `• ${preview}\n`;
-                          });
-                          constructedAnswer += "\n";
-                        }
-                      }
+                  if (relevantChunks.length > 0) {
+                    constructedAnswer += `**${result.sub_query}**\n`;
+                    const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file));
+                    constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`;
+
+                    relevantChunks.slice(0, 3).forEach(chunk => {
+                      const preview = chunk.text.length > 150 ?
+                        chunk.text.substring(0, 150) + "..." : chunk.text;
+                      constructedAnswer += `• ${preview}\n`;
                     });
-
-                    return constructedAnswer.trim();
+                    constructedAnswer += "\n";
                   }
-                  return "I searched through your documents but couldn't find specific information matching your query.";
                 }
-                return "Analysis completed. Please expand the results section below for detailed findings.";
-              };
+              });
 
-              documentResponse = {
-                answer: constructFinalAnswer(),
-                sources: data.final_result.sources?.map(source => ({
-                  file_id: source.file_id,
-                  file_name: source.file_name,
-                  category: source.category,
-                  description: source.description
-                })) || [],
-                sub_queries: data.final_result.sub_queries || [],
-                sub_answers: data.final_result.sub_query_results?.map((result: SubQueryResult) => ({
-                  sub_query: result.sub_query,
-                  answer: result.context_chunks?.length > 0 
-                    ? `Found ${result.context_chunks.length} relevant chunks from ${result.relevant_files?.length || 0} files` 
-                    : 'No relevant information found',
-                  context_chunks: result.context_chunks?.length || 0,
-                  relevant_files: result.relevant_files,
-                  file_ids: result.file_ids,
-                  context_chunks_data: result.context_chunks
-                })) || [],
-                files_searched: Array.from(new Set(
-                  data.final_result.sub_query_results?.flatMap(result => result.file_ids) || []
-                )),
-                optimization_used: true,
-                timestamp: data.final_result.processing_timestamp
-              }
-              
-              eventSource.close()
-              resolve(documentResponse)
+              return constructedAnswer.trim();
             }
-          } catch (parseError) {
-            console.error('Error parsing SSE data:', parseError)
+            return "I searched through your documents but couldn't find specific information matching your query.";
           }
+          return "Analysis completed. Please expand the results section below for detailed findings.";
+        };
+
+        const documentResponse: DocumentResponse = {
+          answer: constructFinalAnswer(),
+          sources: data.final_result.sources?.map(source => ({
+            file_id: source.file_id,
+            file_name: source.file_name,
+            category: source.category,
+            description: source.description
+          })) || [],
+          sub_queries: data.final_result.sub_queries || [],
+          sub_answers: data.final_result.sub_query_results?.map((result: SubQueryResult) => ({
+            sub_query: result.sub_query,
+            answer: result.context_chunks?.length > 0
+              ? `Found ${result.context_chunks.length} relevant chunks from ${result.relevant_files?.length || 0} files`
+              : 'No relevant information found',
+            context_chunks: result.context_chunks?.length || 0,
+            relevant_files: result.relevant_files,
+            file_ids: result.file_ids,
+            context_chunks_data: result.context_chunks
+          })) || [],
+          files_searched: Array.from(new Set(
+            data.final_result.sub_query_results?.flatMap(result => result.file_ids) || []
+          )),
+          optimization_used: true,
+          timestamp: data.final_result.processing_timestamp
         }
 
-        eventSource.onerror = (error) => {
-          console.error('SSE Error:', error)
-          eventSource.close()
-          reject(new Error('Failed to process question'))
-        }
-
-        // Timeout after 60 seconds
-        setTimeout(() => {
-          eventSource.close()
-          if (!documentResponse) {
-            reject(new Error('Question processing timed out'))
-          }
-        }, 60000)
-
-      } catch (error) {
-        reject(error)
+        return documentResponse
+      } else {
+        throw new Error('No final_result in API response')
       }
-    })
+    } catch (error) {
+      console.error('Error processing individual question:', error)
+      throw error
+    }
   }
 
   const pauseBatchProcessing = () => {
@@ -816,7 +835,7 @@ const DocumentChatBot = () => {
 
     const sessionId = generateSessionId()
     setCurrentSessionId(sessionId)
-    
+
     const userMessage: ChatMessage = {
       id: Date.now(),
       type: 'user',
@@ -824,7 +843,7 @@ const DocumentChatBot = () => {
       timestamp: new Date()
     }
 
-    const streamingMessage: ChatMessage = {
+    const botMessage: ChatMessage = {
       id: Date.now() + 1,
       type: 'bot',
       content: 'Starting AI analysis...',
@@ -834,190 +853,183 @@ const DocumentChatBot = () => {
       processingSteps: []
     }
 
-    setMessages(prev => [...prev, userMessage, streamingMessage])
+    setMessages(prev => [...prev, userMessage, botMessage])
     const currentMessage = inputValue
     setInputValue('')
     setIsStreaming(true)
 
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-      const streamUrl = `${baseUrl}/question-live-stream/${sessionId}?question=${encodeURIComponent(currentMessage)}`
-      const eventSource = new EventSource(streamUrl)
-      eventSourceRef.current = eventSource
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://139.59.25.32:8000'
+      const url = `${baseUrl}/question-live`
 
-      eventSource.onopen = () => {
-        console.log('SSE Connection opened')
+      const requestBody = {
+        question: currentMessage,
+        session_id: sessionId
       }
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data: LiveStreamData = JSON.parse(event.data)
-          console.log('Received SSE data:', data)
+      // Log the request
+      // apiLogger.logRequest(url, 'POST', sessionId, currentMessage, requestBody)
 
-          switch (data.type) {
-            case 'connected':
-              updateMessageProcessingSteps(streamingMessage.id, {
-                step: 'connected',
-                status: 'completed',
-                message: data.message || 'Connected to processing stream',
-                details: {},
-                timestamp: new Date().toISOString()
-              })
-              break
+      // Update message to show we're connecting
+      updateMessageProcessingSteps(botMessage.id, {
+        step: 'initialization',
+        status: 'started',
+        message: 'Initializing request',
+        details: {},
+        timestamp: new Date().toISOString()
+      })
 
-            case 'step':
-              if (data.step && data.status && data.message && data.timestamp) {
-                updateMessageProcessingSteps(streamingMessage.id, {
-                  step: data.step,
-                  status: data.status as 'started' | 'completed' | 'failed',
-                  message: data.message,
-                  details: data.details || {},
-                  timestamp: data.timestamp
-                })
-
-                setMessages(prev => prev.map(msg => {
-                  if (msg.id === streamingMessage.id) {
-                    return {
-                      ...msg,
-                      content: `Processing: ${data.message}...`
-                    }
-                  }
-                  return msg
-                }))
-              }
-              break
-
-            case 'complete':
-              if (data.final_result) {
-                const constructFinalAnswer = () => {
-                  if (data.final_result.final_answer && data.final_result.final_answer.trim() && 
-                      data.final_result.final_answer !== 'Processing completed') {
-                    return data.final_result.final_answer;
-                  }
-
-                  if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
-                    const hasRelevantData = data.final_result.sub_query_results.some(result => 
-                      result.context_chunks && result.context_chunks.length > 0
-                    );
-
-                    if (hasRelevantData) {
-                      let constructedAnswer = "Based on the analysis of your documents:\n\n";
-                      
-                      data.final_result.sub_query_results.forEach((result, index) => {
-                        if (result.context_chunks && result.context_chunks.length > 0) {
-                          const relevantChunks = result.context_chunks.filter(chunk => 
-                            chunk.relevance_type === 'category_match' || chunk.text.length > 20
-                          );
-                          
-                          if (relevantChunks.length > 0) {
-                            constructedAnswer += `**${result.sub_query}**\n`;
-                            const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file));
-                            constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`;
-                            
-                            relevantChunks.slice(0, 3).forEach(chunk => {
-                              const preview = chunk.text.length > 150 ? 
-                                chunk.text.substring(0, 150) + "..." : chunk.text;
-                              constructedAnswer += `• ${preview}\n`;
-                            });
-                            constructedAnswer += "\n";
-                          }
-                        }
-                      });
-
-                      return constructedAnswer.trim();
-                    } else {
-                      return "I searched through your documents but couldn't find specific information matching your query. You may want to try rephrasing your question or check if the relevant documents are uploaded.";
-                    }
-                  }
-
-                  return "Analysis completed. Please expand the results section below for detailed findings.";
-                };
-
-                const documentResponse: DocumentResponse = {
-                  answer: constructFinalAnswer(),
-                  sources: data.final_result.sources?.map(source => ({
-                    file_id: source.file_id,
-                    file_name: source.file_name,
-                    category: source.category,
-                    description: source.description
-                  })) || [],
-                  sub_queries: data.final_result.sub_queries || [],
-                  sub_answers: data.final_result.sub_query_results?.map((result: SubQueryResult) => ({
-                    sub_query: result.sub_query,
-                    answer: result.context_chunks?.length > 0 
-                      ? `Found ${result.context_chunks.length} relevant chunks from ${result.relevant_files?.length || 0} files` 
-                      : 'No relevant information found',
-                    context_chunks: result.context_chunks?.length || 0,
-                    relevant_files: result.relevant_files,
-                    file_ids: result.file_ids,
-                    context_chunks_data: result.context_chunks
-                  })) || [],
-                  files_searched: Array.from(new Set(
-                    data.final_result.sub_query_results?.flatMap(result => result.file_ids) || []
-                  )),
-                  optimization_used: true,
-                  timestamp: data.final_result.processing_timestamp
-                }
-
-                setMessages(prev => prev.map(msg => {
-                  if (msg.id === streamingMessage.id) {
-                    return {
-                      ...msg,
-                      content: documentResponse.answer,
-                      isStreaming: false,
-                      documentResponse: documentResponse,
-                      quickReplies: generateQuickReplies(documentResponse)
-                    }
-                  }
-                  return msg
-                }))
-                
-                cleanupEventSource()
-                setIsStreaming(false)
-                setCurrentSessionId(null)
-              }
-              break
-
-            case 'error':
-              throw new Error(data.message || 'Stream processing error')
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === botMessage.id) {
+          return {
+            ...msg,
+            content: 'Processing: Initializing request...'
           }
-        } catch (parseError) {
-          console.error('Error parsing SSE data:', parseError)
+        }
+        return msg
+      }))
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'accept': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        // apiLogger.logError(url, `HTTP ${response.status}: ${errorText}`, sessionId, { status: response.status })
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // Log the response
+      // apiLogger.logResponse(url, response.status, data, sessionId)
+
+      console.log('📥 Received API response:', data)
+
+      // Process the response steps and show them
+      if (data.steps && Array.isArray(data.steps)) {
+        for (const step of data.steps) {
+          updateMessageProcessingSteps(botMessage.id, step)
+
+          // Update the message content to show current step
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === botMessage.id) {
+              return {
+                ...msg,
+                content: `Processing: ${step.message}...`
+              }
+            }
+            return msg
+          }))
+
+          // Small delay to show the step transition
+          await new Promise(resolve => setTimeout(resolve, 100))
         }
       }
 
-      eventSource.onerror = (error) => {
-        console.error('SSE Error:', error)
-        
+      // Handle final result
+      if (data.is_complete && data.final_result) {
+        const constructFinalAnswer = () => {
+          if (data.final_result.final_answer && data.final_result.final_answer.trim() &&
+              data.final_result.final_answer !== 'Processing completed') {
+            return data.final_result.final_answer
+          }
+
+          if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
+            const hasRelevantData = data.final_result.sub_query_results.some(result =>
+              result.context_chunks && result.context_chunks.length > 0
+            )
+
+            if (hasRelevantData) {
+              let constructedAnswer = "Based on the analysis of your documents:\n\n"
+
+              data.final_result.sub_query_results.forEach((result: SubQueryResult) => {
+                if (result.context_chunks && result.context_chunks.length > 0) {
+                  const relevantChunks = result.context_chunks.filter(chunk =>
+                    chunk.relevance_type === 'category_match' || chunk.text.length > 20
+                  )
+
+                  if (relevantChunks.length > 0) {
+                    constructedAnswer += `**${result.sub_query}**\n`
+                    const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file))
+                    constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`
+
+                    relevantChunks.slice(0, 3).forEach(chunk => {
+                      const preview = chunk.text.length > 150 ?
+                        chunk.text.substring(0, 150) + "..." : chunk.text
+                      constructedAnswer += `• ${preview}\n`
+                    })
+                    constructedAnswer += "\n"
+                  }
+                }
+              })
+
+              return constructedAnswer.trim()
+            }
+            return "I searched through your documents but couldn't find specific information matching your query."
+          }
+          return "Analysis completed. Please expand the results section below for detailed findings."
+        }
+
+        const documentResponse: DocumentResponse = {
+          answer: constructFinalAnswer(),
+          sources: data.final_result.sources?.map((source: any) => ({
+            file_id: source.file_id,
+            file_name: source.file_name,
+            category: source.category,
+            description: source.description
+          })) || [],
+          sub_queries: data.final_result.sub_queries || [],
+          sub_answers: data.final_result.sub_query_results?.map((result: SubQueryResult) => ({
+            sub_query: result.sub_query,
+            answer: result.context_chunks?.length > 0
+              ? `Found ${result.context_chunks.length} relevant chunks from ${result.relevant_files?.length || 0} files`
+              : 'No relevant information found',
+            context_chunks: result.context_chunks?.length || 0,
+            relevant_files: result.relevant_files,
+            file_ids: result.file_ids,
+            context_chunks_data: result.context_chunks
+          })) || [],
+          files_searched: Array.from(new Set(
+            data.final_result.sub_query_results?.flatMap((result: SubQueryResult) => result.file_ids) || []
+          )),
+          optimization_used: true,
+          timestamp: data.final_result.processing_timestamp
+        }
+
         setMessages(prev => prev.map(msg => {
-          if (msg.id === streamingMessage.id) {
+          if (msg.id === botMessage.id) {
             return {
               ...msg,
-              content: 'An error occurred while processing your request. Please try again.',
+              content: documentResponse.answer,
               isStreaming: false,
-              isError: true,
-              quickReplies: [
-                { id: 'retry', text: 'Try again', action: 'retry' },
-                { id: 'help', text: 'Get help', action: 'help' }
-              ]
+              documentResponse: documentResponse,
+              quickReplies: generateQuickReplies(documentResponse)
             }
           }
           return msg
         }))
-        
-        cleanupEventSource()
-        setIsStreaming(false)
-        setCurrentSessionId(null)
+      } else {
+        throw new Error('Incomplete response from API')
       }
 
+      setIsStreaming(false)
+      setCurrentSessionId(null)
+
     } catch (error) {
-      console.error('Error starting stream:', error)
-      
+      console.error('❌ Error processing question:', error)
+      // apiLogger.logError( error instanceof Error ? error.message : 'Unknown error', sessionId)
+
       setMessages(prev => prev.map(msg => {
-        if (msg.id === streamingMessage.id) {
+        if (msg.id === botMessage.id) {
           return {
             ...msg,
-            content: 'Failed to start processing. Please check your connection and try again.',
+            content: 'Failed to process your question. Please try again.',
             isStreaming: false,
             isError: true,
             quickReplies: [
@@ -1028,11 +1040,239 @@ const DocumentChatBot = () => {
         }
         return msg
       }))
-      
+
       setIsStreaming(false)
       setCurrentSessionId(null)
     }
   }
+
+  // Old SSE-based implementation (kept for reference)
+  // const handleSendMessageWithSSE = async () => {
+  //   if (!inputValue.trim() || isStreaming) return
+
+  //   const sessionId = generateSessionId()
+  //   setCurrentSessionId(sessionId)
+
+  //   const userMessage: ChatMessage = {
+  //     id: Date.now(),
+  //     type: 'user',
+  //     content: inputValue.trim(),
+  //     timestamp: new Date()
+  //   }
+
+  //   const streamingMessage: ChatMessage = {
+  //     id: Date.now() + 1,
+  //     type: 'bot',
+  //     content: 'Starting AI analysis...',
+  //     timestamp: new Date(),
+  //     isStreaming: true,
+  //     sessionId: sessionId,
+  //     processingSteps: []
+  //   }
+
+  //   setMessages(prev => [...prev, userMessage, streamingMessage])
+  //   const currentMessage = inputValue
+  //   setInputValue('')
+  //   setIsStreaming(true)
+
+  //   try {
+  //     const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://139.59.25.32:8000'
+  //     const streamUrl = `${baseUrl}/question-live-stream/${sessionId}?question=${encodeURIComponent(currentMessage)}`
+
+  //     // Log the SSE connection request
+  //     // apiLogger.logRequest(streamUrl, 'GET (SSE)', sessionId, currentMessage)
+
+  //     const eventSource = new EventSource(streamUrl)
+  //     eventSourceRef.current = eventSource
+
+  //     eventSource.onopen = () => {
+  //       console.log('SSE Connection opened')
+  //     }
+
+  //     eventSource.onmessage = (event) => {
+  //       try {
+  //         const data: LiveStreamData = JSON.parse(event.data)
+  //         console.log('Received SSE data:', data)
+
+  //         switch (data.type) {
+  //           case 'connected':
+  //             updateMessageProcessingSteps(streamingMessage.id, {
+  //               step: 'connected',
+  //               status: 'completed',
+  //               message: data.message || 'Connected to processing stream',
+  //               details: {},
+  //               timestamp: new Date().toISOString()
+  //             })
+  //             break
+
+  //           case 'step':
+  //             if (data.step && data.status && data.message && data.timestamp) {
+  //               updateMessageProcessingSteps(streamingMessage.id, {
+  //                 step: data.step,
+  //                 status: data.status as 'started' | 'completed' | 'failed',
+  //                 message: data.message,
+  //                 details: data.details || {},
+  //                 timestamp: data.timestamp
+  //               })
+
+  //               setMessages(prev => prev.map(msg => {
+  //                 if (msg.id === streamingMessage.id) {
+  //                   return {
+  //                     ...msg,
+  //                     content: `Processing: ${data.message}...`
+  //                   }
+  //                 }
+  //                 return msg
+  //               }))
+  //             }
+  //             break
+
+  //           case 'complete':
+  //             if (data.final_result) {
+  //               const constructFinalAnswer = () => {
+  //                 if (data.final_result.final_answer && data.final_result.final_answer.trim() &&
+  //                     data.final_result.final_answer !== 'Processing completed') {
+  //                   return data.final_result.final_answer;
+  //                 }
+
+  //                 if (data.final_result.sub_query_results && data.final_result.sub_query_results.length > 0) {
+  //                   const hasRelevantData = data.final_result.sub_query_results.some(result =>
+  //                     result.context_chunks && result.context_chunks.length > 0
+  //                   );
+
+  //                   if (hasRelevantData) {
+  //                     let constructedAnswer = "Based on the analysis of your documents:\n\n";
+
+  //                     data.final_result.sub_query_results.forEach((result, index) => {
+  //                       if (result.context_chunks && result.context_chunks.length > 0) {
+  //                         const relevantChunks = result.context_chunks.filter(chunk =>
+  //                           chunk.relevance_type === 'category_match' || chunk.text.length > 20
+  //                         );
+
+  //                         if (relevantChunks.length > 0) {
+  //                           constructedAnswer += `**${result.sub_query}**\n`;
+  //                           const uniqueFiles = new Set(relevantChunks.map(chunk => chunk.source_file));
+  //                           constructedAnswer += `Found relevant information in ${uniqueFiles.size} document(s):\n`;
+
+  //                           relevantChunks.slice(0, 3).forEach(chunk => {
+  //                             const preview = chunk.text.length > 150 ?
+  //                               chunk.text.substring(0, 150) + "..." : chunk.text;
+  //                             constructedAnswer += `• ${preview}\n`;
+  //                           });
+  //                           constructedAnswer += "\n";
+  //                         }
+  //                       }
+  //                     });
+
+  //                     return constructedAnswer.trim();
+  //                   } else {
+  //                     return "I searched through your documents but couldn't find specific information matching your query. You may want to try rephrasing your question or check if the relevant documents are uploaded.";
+  //                   }
+  //                 }
+
+  //                 return "Analysis completed. Please expand the results section below for detailed findings.";
+  //               };
+
+  //               const documentResponse: DocumentResponse = {
+  //                 answer: constructFinalAnswer(),
+  //                 sources: data.final_result.sources?.map(source => ({
+  //                   file_id: source.file_id,
+  //                   file_name: source.file_name,
+  //                   category: source.category,
+  //                   description: source.description
+  //                 })) || [],
+  //                 sub_queries: data.final_result.sub_queries || [],
+  //                 sub_answers: data.final_result.sub_query_results?.map((result: SubQueryResult) => ({
+  //                   sub_query: result.sub_query,
+  //                   answer: result.context_chunks?.length > 0
+  //                     ? `Found ${result.context_chunks.length} relevant chunks from ${result.relevant_files?.length || 0} files`
+  //                     : 'No relevant information found',
+  //                   context_chunks: result.context_chunks?.length || 0,
+  //                   relevant_files: result.relevant_files,
+  //                   file_ids: result.file_ids,
+  //                   context_chunks_data: result.context_chunks
+  //                 })) || [],
+  //                 files_searched: Array.from(new Set(
+  //                   data.final_result.sub_query_results?.flatMap(result => result.file_ids) || []
+  //                 )),
+  //                 optimization_used: true,
+  //                 timestamp: data.final_result.processing_timestamp
+  //               }
+
+  //               setMessages(prev => prev.map(msg => {
+  //                 if (msg.id === streamingMessage.id) {
+  //                   return {
+  //                     ...msg,
+  //                     content: documentResponse.answer,
+  //                     isStreaming: false,
+  //                     documentResponse: documentResponse,
+  //                     quickReplies: generateQuickReplies(documentResponse)
+  //                   }
+  //                 }
+  //                 return msg
+  //               }))
+
+  //               cleanupEventSource()
+  //               setIsStreaming(false)
+  //               setCurrentSessionId(null)
+  //             }
+  //             break
+
+  //           case 'error':
+  //             throw new Error(data.message || 'Stream processing error')
+  //         }
+  //       } catch (parseError) {
+  //         console.error('Error parsing SSE data:', parseError)
+  //       }
+  //     }
+
+  //     eventSource.onerror = (error) => {
+  //       console.error('SSE Error:', error)
+
+  //       setMessages(prev => prev.map(msg => {
+  //         if (msg.id === streamingMessage.id) {
+  //           return {
+  //             ...msg,
+  //             content: 'An error occurred while processing your request. Please try again.',
+  //             isStreaming: false,
+  //             isError: true,
+  //             quickReplies: [
+  //               { id: 'retry', text: 'Try again', action: 'retry' },
+  //               { id: 'help', text: 'Get help', action: 'help' }
+  //             ]
+  //           }
+  //         }
+  //         return msg
+  //       }))
+
+  //       cleanupEventSource()
+  //       setIsStreaming(false)
+  //       setCurrentSessionId(null)
+  //     }
+
+  //   } catch (error) {
+  //     console.error('Error starting stream:', error)
+
+  //     setMessages(prev => prev.map(msg => {
+  //       if (msg.id === streamingMessage.id) {
+  //         return {
+  //           ...msg,
+  //           content: 'Failed to start processing. Please check your connection and try again.',
+  //           isStreaming: false,
+  //           isError: true,
+  //           quickReplies: [
+  //             { id: 'retry', text: 'Try again', action: 'retry' },
+  //             { id: 'help', text: 'Get help', action: 'help' }
+  //           ]
+  //         }
+  //       }
+  //       return msg
+  //     }))
+
+  //     setIsStreaming(false)
+  //     setCurrentSessionId(null)
+  //   }
+  // }
 
   const generateQuickReplies = (response: DocumentResponse | null) => {
     if (!response) return []
