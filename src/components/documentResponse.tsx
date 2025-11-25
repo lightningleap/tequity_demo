@@ -320,19 +320,62 @@ const DocumentChatBot = () => {
     }
   }, [messages]);
 
+  // Helper function to safely stringify messages by removing circular references
+  const getSafeMessagesToSave = (msgs: any[]) => {
+    return msgs.map(msg => {
+      // Create a new object with only the properties we want to save
+      const safeMsg: any = {
+        id: msg.id,
+        type: msg.type,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        isError: msg.isError,
+        isStreaming: msg.isStreaming,
+        sessionId: msg.sessionId,
+      };
+
+      // Only include documentResponse if it exists and is an object
+      if (msg.documentResponse && typeof msg.documentResponse === 'object') {
+        safeMsg.documentResponse = {
+          answer: msg.documentResponse.answer,
+          sources: msg.documentResponse.sources,
+          context: msg.documentResponse.context,
+          timestamp: msg.documentResponse.timestamp,
+          sub_queries: msg.documentResponse.sub_queries,
+          files_searched: msg.documentResponse.files_searched,
+          optimization_used: msg.documentResponse.optimization_used,
+        };
+      }
+
+      // Include processingSteps if they exist
+      if (Array.isArray(msg.processingSteps)) {
+        safeMsg.processingSteps = msg.processingSteps.map((step: any) => ({
+          step: step.step,
+          status: step.status,
+          message: step.message,
+          timestamp: step.timestamp,
+        }));
+      }
+
+      return safeMsg;
+    });
+  };
+
   useEffect(() => {
     // Save messages to local storage whenever they change
     // But limit the size to prevent quota exceeded errors
     try {
       // Only keep the last 20 messages to avoid localStorage quota issues
       const messagesToSave = messages.slice(-20);
-      localStorage.setItem("chatMessages", JSON.stringify(messagesToSave));
+      const safeMessages = getSafeMessagesToSave(messagesToSave);
+      localStorage.setItem("chatMessages", JSON.stringify(safeMessages));
     } catch (error) {
       console.error("Error saving messages to localStorage:", error);
       // If still too large, clear and keep only last 10
       try {
         const messagesToSave = messages.slice(-10);
-        localStorage.setItem("chatMessages", JSON.stringify(messagesToSave));
+        const safeMessages = getSafeMessagesToSave(messagesToSave);
+        localStorage.setItem("chatMessages", JSON.stringify(safeMessages));
       } catch (secondError) {
         console.error(
           "Failed to save messages even after reducing size:",
