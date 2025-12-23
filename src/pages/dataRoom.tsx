@@ -8,14 +8,15 @@ import DocumentChatBot from '@/components/documentResponse';
 const DataRoom: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'files' | 'categories' | 'chat'>('files');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  // const [chatMessages, setChatMessages] = useState([]);
 
   const handleFilesChange = (newFiles: UploadedFile[]) => {
     setUploadedFiles(newFiles);
   };
 
   const handleFileUpdate = (fileId: string, updates: Partial<UploadedFile>) => {
-    setUploadedFiles(prev => 
-      prev.map(file => 
+    setUploadedFiles(prev =>
+      prev.map(file =>
         file.id === fileId ? { ...file, ...updates } : file
       )
     );
@@ -34,33 +35,30 @@ const DataRoom: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2 sm:gap-0">
             <button
-              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${
-                activeTab === 'files'
+              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${activeTab === 'files'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
               onClick={() => setActiveTab('files')}
             >
               <FileText className="w-4 h-4" />
               <span className="whitespace-nowrap">Files ({uploadedFiles.length})</span>
             </button>
             <button
-              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${
-                activeTab === 'categories'
+              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${activeTab === 'categories'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
               onClick={() => setActiveTab('categories')}
             >
               <Database className="w-4 h-4" />
               <span className="whitespace-nowrap">Categories</span>
             </button>
             <button
-              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${
-                activeTab === 'chat'
+              className={`py-2 px-3 sm:px-4 font-medium flex items-center space-x-2 ${activeTab === 'chat'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
               onClick={() => setActiveTab('chat')}
             >
               <MessageSquare className="w-4 h-4" />
@@ -72,20 +70,24 @@ const DataRoom: React.FC = () => {
       </div>
 
       {/* Tab Content */}
-      <div className="bg-white rounded-lg shadow min-h-96">
-        {activeTab === 'files' && (
-          <FilesView 
+      <div className="bg-white rounded-lg shadow min-h-96 relative">
+        <div
+          className={`${activeTab === 'files' ? 'block' : 'hidden'}`}
+        >
+          <FilesView
             files={uploadedFiles}
             onFilesChange={handleFilesChange}
             onFileUpdate={handleFileUpdate}
           />
-        )}
-        {activeTab === 'categories' && (
+        </div>
+
+        <div className={`${activeTab === 'categories' ? 'block' : 'hidden'}`}>
           <CategoriesView files={uploadedFiles} />
-        )}
-        {activeTab === 'chat' && (
-          <DocumentChatBot />
-        )}
+        </div>
+
+        <div className={`${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+          <DocumentChatBot key="chat-bot" />
+        </div>
       </div>
     </div>
   );
